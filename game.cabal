@@ -33,6 +33,7 @@ executable game
 
 library
   exposed-modules:       Unique
+                       , UniqueMap
                        , Entity
                        , Entity.Box
                        , Entity.Player
@@ -52,5 +53,6 @@ library
                      , mtl
                      , random
                      , concurrent-supply
+                     , containers
   hs-source-dirs:      src
   default-language:    Haskell2010

@@ -53,60 +53,6 @@ mkEntity
   -> m (Entity t)
 mkEntity a b c d e = (\f -> Entity f a b c d e) <$> getUnique
 
-mkStaticEntity
-  :: ( MonadHold t m, Reflex t, MonadFix m
-     , HasGrid s t (Entity t), HasSupply s, MonadState s m
-     )
-  => Map -- ^ map on which the entity resides
-  -> Behavior t Picture
-  -> Float -- ^ x coordinate
-  -> Float -- ^ y coordinate
-  -> Float -- ^ width
-  -> Float -- ^ height
-  -> m (Entity t)
-mkStaticEntity Map{..} pic x y w h = mdo
-  let
-    pos =
-      pure $
-      V2
-        (max 0 $ min (_mapWidth - w) x)
-        (max 0 $ min (_mapHeight - h) y)
-
-  entity <- mkEntity pic w h pos qdrs
-
-  (g', qdrs) <- insertG entity (x, y) (w, h) never =<< use grid
-  assign grid g'
-
-  pure entity
-
-mkMovingEntity
-  :: ( MonadHold t m, Reflex t, MonadFix m
-     , HasGrid s t (Entity t), HasSupply s, MonadState s m
-     )
-  => Map -- ^ map on which the entity resides
-  -> Behavior t Picture
-  -> Dynamic t Float -- ^ x coordinate
-  -> Dynamic t Float -- ^ y coordinate
-  -> Float -- ^ width
-  -> Float -- ^ height
-  -> m (Entity t)
-mkMovingEntity Map{..} pic x y w h = mdo
-  let
-    pos =
-      V2 <$>
-      fmap (max 0 . min (_mapWidth - w)) x <*>
-      fmap (max 0 . min (_mapHeight - h)) y
-
-  entity <- mkEntity pic w h pos qdrs
-
-  (g', qdrs) <-
-    insertG entity (0, 0) (w, h) (updated pos) =<<
-    use grid
-
-  assign grid g'
-
-  pure entity
-
 class HasEntity s where
   entity :: Lens' (s t) (Entity t)
 
@@ -170,3 +116,57 @@ intersects a b =
     ((^. _y) <$> e1^.entityPosition) <*>
     ((^. _x) <$> e2^.entityPosition) <*>
     ((^. _y) <$> e2^.entityPosition)
+
+mkStaticEntity
+  :: ( MonadHold t m, Reflex t, MonadFix m
+     , HasGrid s t (Entity t), HasSupply s, MonadState s m
+     )
+  => Map -- ^ map on which the entity resides
+  -> Behavior t Picture
+  -> Float -- ^ x coordinate
+  -> Float -- ^ y coordinate
+  -> Float -- ^ width
+  -> Float -- ^ height
+  -> m (Entity t)
+mkStaticEntity Map{..} pic x y w h = mdo
+  let
+    pos =
+      pure $
+      V2
+        (max 0 $ min (_mapWidth - w) x)
+        (max 0 $ min (_mapHeight - h) y)
+
+  entity <- mkEntity pic w h pos qdrs
+
+  (g', qdrs) <- insertG (entity^.entityId) entity (x, y) (w, h) never =<< use grid
+  assign grid g'
+
+  pure entity
+
+mkMovingEntity
+  :: ( MonadHold t m, Reflex t, MonadFix m
+     , HasGrid s t (Entity t), HasSupply s, MonadState s m
+     )
+  => Map -- ^ map on which the entity resides
+  -> Behavior t Picture
+  -> Dynamic t Float -- ^ x coordinate
+  -> Dynamic t Float -- ^ y coordinate
+  -> Float -- ^ width
+  -> Float -- ^ height
+  -> m (Entity t)
+mkMovingEntity Map{..} pic x y w h = mdo
+  let
+    pos =
+      V2 <$>
+      fmap (max 0 . min (_mapWidth - w)) x <*>
+      fmap (max 0 . min (_mapHeight - h)) y
+
+  entity <- mkEntity pic w h pos qdrs
+
+  (g', qdrs) <-
+    insertG (entity^.entityId) entity (0, 0) (w, h) (updated pos) =<<
+    use grid
+
+  assign grid g'
+
+  pure entity
