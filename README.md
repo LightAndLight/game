@@ -6,4 +6,4 @@ screen pans when the dude approaches the edge. There are boxes
 randomly distributed on the map. When the dude is intersecting a box, the
 dude can open and close the box by pressing space.
 
-[game](screenshot.png)
+![game](screenshot.png)
