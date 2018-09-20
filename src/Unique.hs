@@ -1,26 +1,21 @@
-module Unique
-  ( Unique, unUnique, unsafeMkUnique, Supply, HasSupply(..)
-  , newSupply, getUnique
-  )
-where
+{-# language FunctionalDependencies, MultiParamTypeClasses, FlexibleInstances #-}
+{-# language UndecidableInstances #-}
+{-# language GeneralizedNewtypeDeriving #-}
+{-# language RecursiveDo #-}
+module Unique where
 
+import Reflex
 import Control.Concurrent.Supply (Supply, newSupply, freshId)
-import Control.Lens.Getter (uses)
-import Control.Lens.Lens (Lens')
-import Control.Lens.Setter (assign)
-import Control.Monad.State (MonadState)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.State.Strict
+  (MonadState(..), StateT, evalState, gets)
+import Control.Monad.Trans.Class (MonadTrans(..))
+import Control.Monad.Writer (WriterT)
+import Data.Functor.Const (Const(..))
 
 newtype Unique = Unique { unUnique :: Int }
   deriving (Eq, Ord, Show)
-
-class HasSupply s where
-  supply :: Lens' s Supply
-
-getUnique :: (HasSupply s, MonadState s m) => m Unique
-getUnique = do
-  (id, s') <- uses supply freshId
-  assign supply s'
-  pure $ Unique id
 
 unsafeMkUnique :: Int -> Unique
 unsafeMkUnique = Unique

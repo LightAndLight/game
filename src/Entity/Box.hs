@@ -6,14 +6,12 @@ module Entity.Box where
 import Reflex
 import Control.Lens.Lens (lens)
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State.Strict (MonadState)
 import Graphics.Gloss (Picture)
 
-import Entity (HasEntity(..), Entity, mkStaticEntity, intersects)
+import Entity (HasEntity(..), Entity, MkEntity, mkStaticEntity, intersects)
 import Entity.Player (Player(..))
-import Grid (HasGrid(..))
-import Map (Map(..))
-import Unique (HasSupply(..))
+import GridManager.Class (GridManager)
+import UniqueSupply.Class (UniqueSupply)
 
 data Box t
   = Box
@@ -32,32 +30,27 @@ then some pre-determined event will be considered a command to open or close the
 -}
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , HasGrid s t (Entity t), HasSupply s, MonadState s m
+     , GridManager t (Entity t) m, UniqueSupply t m
      )
-  => Map -- ^ map on which the entity resides
-  -> Player t -- ^ the player
+  => Event t ()
+  -> MkEntity
+  -> Player t
   -> (Picture, Picture) -- ^ (closed picture, open picture)
-  -> Float -- ^ x coordinate
-  -> Float -- ^ y coordinate
-  -> Float -- ^ width
-  -> Float -- ^ height
   -> m (Box t)
-mkBox mp Player{..} (closedPic, openPic) x y w h = mdo
-  let bPic = (\b -> if b then openPic else closedPic) <$> current _boxOpen
+mkBox eAdd mkE player (closedPic, openPic) = mdo
+  let ePic = (\b -> if b then openPic else closedPic) <$> updated _boxOpen
 
-  _boxEntity <- mkStaticEntity mp bPic x y w h
+  _boxEntity <- mkStaticEntity eAdd mkE ePic
 
   _boxOpen <-
     holdDyn False $
     fforMaybe
       ((,) <$>
        current _boxOpen <*>
-       current (_playerEntity `intersects` box) <@ _playerInteract)
-      (\(open, touching)->
+       current (intersects _boxEntity player) <@ _playerInteract player)
+      (\(open, touching) ->
          if touching
          then Just $ not open
          else Nothing)
 
-  let box = Box{..}
-
-  pure box
+  pure Box{..}

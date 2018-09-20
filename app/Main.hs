@@ -1,34 +1,57 @@
 {-# language FlexibleContexts #-}
 {-# language FlexibleInstances, MultiParamTypeClasses #-}
+{-# language GADTs, StandaloneDeriving #-}
 {-# language RecursiveDo #-}
 {-# language RecordWildCards #-}
+{-# language TemplateHaskell #-}
+{-# language ScopedTypeVariables #-}
 module Main where
 
 import Reflex
 import Reflex.Gloss (InputEvent, playReflex)
-import Graphics.Gloss (Display(..), Picture, pictures, white)
-import Graphics.Gloss.Juicy (loadJuicyPNG)
 
-import Control.Lens.Getter (uses)
+import Control.Concurrent.Supply (newSupply)
+import Control.Lens.Getter (uses, view)
 import Control.Lens.Lens (Lens', lens)
 import Control.Lens.Setter (assign)
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, void, join)
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State.Strict (MonadState, evalStateT)
+import Control.Monad.State.Strict
+  (MonadState, evalStateT, get, put, StateT(..), runStateT)
+import Data.Coerce (coerce)
+import Data.Dependent.Sum (DSum(..))
+import Data.Functor.Identity (Identity(..))
+import Data.Functor.Misc (ComposeMaybe(..))
+import Data.GADT.Compare ((:~:)(..), GOrdering(..), GEq(..), GCompare(..))
+import Data.GADT.Show (GShow(..))
 import Data.Semigroup ((<>))
 import Data.Traversable (for)
+import Graphics.Gloss (Display(..), Picture, pictures, white, blank, circle)
+import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (Random, StdGen, getStdGen, next, randomR)
+import Linear.V2 (V2(..))
+
+import qualified Data.Dependent.Map as DMap
 
 import Controls (mkControls)
-import Entity (Entity)
-import Entity.Box (mkBox)
-import Entity.Player (mkPlayer)
-import Grid (HasGrid(..), Grid, emptyGrid)
+import Dimensions (Width(..), Height(..))
+import Entity (Entity, getMkEntity, entity, entityId)
+import Entity.Box (Box, mkBox)
+import Entity.Player (Player, mkPlayer)
+import Grid (Grid)
+import GridManager.Base (runGridManagerT)
+import GridManager.Class (GridManager)
 import Map (Map(..))
-import Render.Entity (renderedEntity)
-import Render.Map (renderedMap)
-import Unique (Supply, HasSupply(..), newSupply)
-import Viewport (ScreenSize(..), mkViewport)
+import RandomGen.Base (runRandomGenT)
+import RandomGen.Class (RandomGen, randomInt)
+import Render.Entity (renderedEntity, renderedEntityE)
+import Render.Map (renderedMap, renderedMapE)
+import Unique (Unique)
+import UniqueSupply.Base (runUniqueSupplyT)
+import UniqueSupply.Class (UniqueSupply(..))
+import Viewport (ScreenSize(..), mkViewport, _vpWidth)
+
+import Control.Lens (_1, over)
 
 data Assets
   = Assets
@@ -38,38 +61,63 @@ data Assets
   , _assetsBoxOpenPicture :: Picture
   }
 
-class HasStdGen s where
-  stdGen :: Lens' s StdGen
-
-genRandom :: (HasStdGen s, MonadState s m) => m Int
-genRandom = do
-  (i, g) <- uses stdGen next
-  assign stdGen g
-  pure i
-
-genRandomR :: (Random a, HasStdGen s, MonadState s m) => a -> a -> m a
-genRandomR a b = do
-  (i, g) <- uses stdGen $ randomR (a, b)
-  assign stdGen g
-  pure i
-
 game
-  :: ( Reflex t, MonadHold t m, MonadFix m
-     , HasStdGen s, HasGrid s t (Entity t), HasSupply s, MonadState s m
+  :: forall t m
+   . ( Reflex t, MonadHold t m, MonadFix m
+     , PostBuild t m, Adjustable t m
+     , GridManager t (Entity t) m, UniqueSupply t m, RandomGen t m
      )
   => ScreenSize Float
   -> Assets
   -> Event t Float
   -> Event t InputEvent
-  -> m (Behavior t Picture)
+  -> m (Dynamic t Picture)
 game screenSize Assets{..} refresh input = mdo
   controls <- mkControls refresh input
 
-  let mp = Map _assetsMapPicture 1000 1000
-  assign grid $ emptyGrid (1000, 1000)
+  let
+    mp = Map _assetsMapPicture (Width 1000) (Height 1000)
 
-  player <- mkPlayer controls mp _assetsPlayerPicture
+  ePostBuild <- getPostBuild
 
+  eMkPlayerEntity <-
+    fmap snd <$>
+    getMkEntity
+      ePostBuild
+      mp
+      _assetsPlayerPicture
+      (Width 20)
+      (Height 20)
+      (V2 0 0)
+
+  (_, ePlayer) <-
+    runWithReplace
+      (pure ())
+      ((\mkE -> mkPlayer ePostBuild mkE controls) <$> eMkPlayerEntity)
+
+  eMkBoxWithPlayer <-
+    getMkEntity
+      ePlayer
+      mp
+      _assetsBoxClosedPicture
+      (Width 10)
+      (Height 10)
+      (V2 40 40)
+
+  (_, eBox) <-
+    runWithReplace
+      (pure ())
+      ((\(player, mbe) ->
+          mkBox
+            (() <$ ePlayer)
+            mbe
+            player
+            (_assetsBoxClosedPicture, _assetsBoxOpenPicture)) <$>
+        eMkBoxWithPlayer)
+
+  eRandomInts <- replicateM 5 $ randomInt ePlayer
+
+{-
   boxesCoords <-
     replicateM 5 $
     (,) <$>
@@ -80,30 +128,23 @@ game screenSize Assets{..} refresh input = mdo
     for boxesCoords $
     \(x, y) ->
       mkBox mp player (_assetsBoxClosedPicture, _assetsBoxOpenPicture) x y 10 10
+  -}
 
-  viewport <- mkViewport 100 screenSize controls player mp
+  (_, eViewport) <-
+    runWithReplace
+      (pure ())
+      ((\p -> mkViewport 100 screenSize controls p mp) <$> ePlayer)
 
+  renderedPlayer <- renderedEntityE eViewport ePlayer
+  renderedBox <- renderedEntityE eViewport eBox
+  renderedMap <- renderedMapE eViewport mp
   pure . fmap pictures . sequence $
-    [ renderedMap viewport mp
-    , renderedEntity viewport player
-    ] <>
-    fmap (renderedEntity viewport) boxes
-
-data GameState t
-  = GameState
-  { gameGrid :: Grid t (Entity t)
-  , gameStdGen :: StdGen
-  , gameSupply :: Supply
-  }
-
-instance HasGrid (GameState t) t (Entity t) where
-  grid = lens gameGrid (\gs g -> gs { gameGrid = g })
-
-instance HasStdGen (GameState t) where
-  stdGen = lens gameStdGen (\gs s -> gs { gameStdGen = s })
-
-instance HasSupply (GameState t) where
-  supply = lens gameSupply (\gs s -> gs { gameSupply = s })
+    -- [ renderedMap viewport mp
+    [ renderedMap
+    , renderedPlayer
+    , renderedBox
+    ]
+    -- <> fmap (renderedEntity viewport) boxes
 
 main :: IO ()
 main = do
@@ -133,5 +174,7 @@ main = do
     white
     30
     (\er ei ->
-       flip evalStateT (GameState (emptyGrid (0, 0)) stg sup) $
+       runRandomGenT stg $
+       runUniqueSupplyT sup $
+       runGridManagerT (Width 1000) (Height 1000) $
        game (fromIntegral <$> screenSize) Assets{..} er ei)

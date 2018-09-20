@@ -7,18 +7,20 @@ import Reflex
 
 import Control.Lens.Getter ((^.))
 import Control.Lens.Lens (lens)
+import Control.Lens.Operators ((<&>))
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State.Strict (MonadState)
 import Data.Foldable (fold)
 import Data.Monoid (Endo(..))
 import Graphics.Gloss (Picture)
-import Linear.V2 (V2, R1(..), R2(..))
+import Linear.V2 (V2(..), R1(..), R2(..))
 
 import Controls (Controls(..))
-import Entity (HasEntity(..), Entity, entityPosition, mkMovingEntity)
-import Grid (HasGrid(..))
+import Dimensions (Width, Height)
+import Entity
+  (HasEntity(..), Entity, MkEntity, entityPosition, getMkEntity, mkMovingEntity)
+import GridManager.Class (GridManager)
 import Map (Map)
-import Unique (HasSupply)
+import UniqueSupply.Class (UniqueSupply)
 
 data Player t
   = Player
@@ -31,38 +33,31 @@ instance HasEntity Player where
 
 mkPlayer
   :: ( MonadHold t m, Reflex t, MonadFix m
-     , HasGrid s t (Entity t), HasSupply s, MonadState s m
+     , GridManager t (Entity t) m, UniqueSupply t m
      )
-  => Controls t
-  -> Map
-  -> Picture
+  => Event t ()
+  -> MkEntity
+  -> Controls t
   -> m (Player t)
-mkPlayer Controls{..} mp pic = mdo
-  dXPos <-
-    holdUniqDyn =<<
-    holdDyn 0
-      (appEndo
-       (fold
-          [ Endo $ \bp -> (\n b -> if b then n+5 else n) <$> bp <*> current _dDHeld
-          , Endo $ \bp -> (\n b -> if b then n-5 else n) <$> bp <*> current _dAHeld
-          ])
-       ((^. _x) <$> current (player^.entity.entityPosition))
-       <@ _eRefresh)
+mkPlayer eAdd mkE Controls{..} = mdo
+  let
+    eX =
+      (.) <$>
+      ((\b n -> if b then n+5 else n) <$> current _dDHeld) <*>
+      ((\b n -> if b then n-5 else n) <$> current _dAHeld) <@>
+      ((^. _x) <$> bPlayerPos <@ _eRefresh)
 
-  dYPos <-
-    holdUniqDyn =<<
-    holdDyn 0
-      (appEndo
-       (fold
-          [ Endo $ \bp -> (\n b -> if b then n+5 else n) <$> bp <*> current _dSHeld
-          , Endo $ \bp -> (\n b -> if b then n-5 else n) <$> bp <*> current _dWHeld
-          ])
-       ((^. _y) <$> current (player^.entity.entityPosition))
-       <@ _eRefresh)
+    eY =
+      (.) <$>
+      ((\b n -> if b then n+5 else n) <$> current _dSHeld) <*>
+      ((\b n -> if b then n-5 else n) <$> current _dWHeld) <@>
+      ((^. _y) <$> bPlayerPos <@ _eRefresh)
 
-  _playerEntity <- mkMovingEntity mp (pure pic) dXPos dYPos 20 20
-  let _playerInteract = current (_playerEntity^.entityPosition) <@ _eSpacePressed
+  _playerEntity <- mkMovingEntity eAdd mkE never eX eY
 
-  let player = Player{..}
+  let
+    bPlayerPos = current $ _playerEntity^.entityPosition
+    _playerInteract = bPlayerPos <@ _eSpacePressed
+    player = Player{..}
 
   pure player

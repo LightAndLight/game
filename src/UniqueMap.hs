@@ -6,16 +6,23 @@ import Control.Lens.Setter (over, mapped)
 import Control.Lens.Tuple (_1)
 import Control.Monad.Fix (MonadFix)
 import Data.Coerce (coerce)
+import Data.Semigroup (Semigroup)
 
 import qualified Data.IntMap.Strict as IntMap
 
 import Unique (Unique, unsafeMkUnique, unUnique)
 
 newtype UniqueMap a = UniqueMap { unUniqueMap :: IntMap.IntMap a }
-  deriving (Functor, Foldable)
+  deriving (Functor, Foldable, Semigroup, Show)
 
 insert :: Unique -> a -> UniqueMap a -> UniqueMap a
 insert u a = coerce $ IntMap.insert (unUnique u) a
+
+member :: Unique -> UniqueMap a -> Bool
+member u um = IntMap.member (unUnique u) (unUniqueMap um)
+
+singleton :: Unique -> a -> UniqueMap a
+singleton u a = UniqueMap $ IntMap.singleton (unUnique u) a
 
 empty :: UniqueMap a
 empty = UniqueMap IntMap.empty
@@ -25,6 +32,13 @@ delete u m = UniqueMap $ IntMap.delete (unUnique u) (unUniqueMap m)
 
 lookup :: Unique -> UniqueMap a -> Maybe a
 lookup u m = IntMap.lookup (unUnique u) (unUniqueMap m)
+
+foldrWithKey :: (Unique -> a -> b -> b) -> b -> UniqueMap a -> b
+foldrWithKey a b c =
+  IntMap.foldrWithKey (a . unsafeMkUnique) b (unUniqueMap c)
+
+alter :: (Maybe a -> Maybe a) -> Unique -> UniqueMap a -> UniqueMap a
+alter f u = coerce $ IntMap.alter f (unUnique u)
 
 fromList :: [(Unique, a)] -> UniqueMap a
 fromList = UniqueMap . IntMap.fromList . over (mapped._1) unUnique
