@@ -4,12 +4,19 @@
 module Entity.Box where
 
 import Reflex
+import Control.Lens.Getter ((^.))
 import Control.Lens.Lens (lens)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
+import Linear.V2 (V2)
 
-import Entity (HasEntity(..), Entity, MkEntity, mkStaticEntity, intersects)
+import Dimensions (Width, Height)
+import Entity
+  ( HasEntity(..), Entity, MkEntity(..), mkStaticEntity, intersects
+  , entityQuadrants, entityPosition, entityWidth, entityHeight
+  )
 import Entity.Player (Player(..))
+import Grid (Quadrant)
 import GridManager.Class (GridManager)
 import UniqueSupply.Class (UniqueSupply)
 
@@ -22,35 +29,30 @@ data Box t
 instance HasEntity Box where
   entity = lens _boxEntity (\b e -> b { _boxEntity = e })
 
-{-
-a box can only be opened when the thing that tried to open it is close enough
 
-if a the thing is close to the box
-then some pre-determined event will be considered a command to open or close the box
--}
-mkBox
-  :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m, UniqueSupply t m
-     )
-  => Event t ()
-  -> MkEntity
-  -> Player t
-  -> (Picture, Picture) -- ^ (closed picture, open picture)
-  -> m (Box t)
-mkBox eAdd mkE player (closedPic, openPic) = mdo
-  let ePic = (\b -> if b then openPic else closedPic) <$> updated _boxOpen
-
-  _boxEntity <- mkStaticEntity eAdd mkE ePic
-
-  _boxOpen <-
+mkBoxOpen
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float) -- ^ player intersect info
+  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float) -- ^ box intersect info
+  -> Event t a -- ^ player interact event
+  -> m (Dynamic t Bool)
+mkBoxOpen playerIntersect boxIntersect ePlayerInteract = mdo
+  dBoxOpen <-
     holdDyn False $
     fforMaybe
       ((,) <$>
-       current _boxOpen <*>
-       current (intersects _boxEntity player) <@ _playerInteract player)
+        current dBoxOpen <*>
+        current (intersects playerIntersect boxIntersect) <@ ePlayerInteract)
       (\(open, touching) ->
-         if touching
-         then Just $ not open
-         else Nothing)
+          if touching
+          then Just $ not open
+          else Nothing)
+  pure dBoxOpen
 
-  pure Box{..}
+mkBoxPicture
+  :: Reflex t
+  => (Picture, Picture)
+  -> Dynamic t Bool
+  -> Dynamic t Picture
+mkBoxPicture (open, closed) dBoxOpen =
+  (\b -> if b then open else closed) <$> dBoxOpen

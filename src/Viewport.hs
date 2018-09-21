@@ -30,11 +30,17 @@ mkViewport
   :: (MonadHold t m, Reflex t, MonadFix m)
   => Float -- ^ Edge-scrolling threshold
   -> ScreenSize Float
-  -> Controls t -- ^ The controls
-  -> Player t
   -> Map -- ^ The map it is viewing
+  -> Controls t -- ^ The controls
+  -> (Width Float, Height Float, Dynamic t (V2 Float))
   -> m (Viewport t)
-mkViewport threshold (ScreenSize (vpW, vpH)) Controls{..} Player{..} Map{..} = mdo
+mkViewport
+  threshold
+  (ScreenSize (vpW, vpH))
+  Map{..}
+  Controls{..}
+  (playerWidth, playerHeight, dPlayerPos) = mdo
+
   let
     _vpWidth = Width vpW
     _vpHeight = Height vpH
@@ -47,7 +53,7 @@ mkViewport threshold (ScreenSize (vpW, vpH)) Controls{..} Player{..} Map{..} = m
           toLeftEdge = (vpos + threshold) - epos^._x
 
           toRightEdge =
-            (epos^._x + _playerEntity^.entityWidth.to unWidth) -
+            (epos^._x + unWidth playerWidth) -
             (vpos + unWidth _vpWidth - threshold)
         in
           if toLeftEdge > 0
@@ -56,7 +62,7 @@ mkViewport threshold (ScreenSize (vpW, vpH)) Controls{..} Player{..} Map{..} = m
             if toRightEdge > 0
             then min (unWidth _mapWidth - unWidth _vpWidth) $ vpos + toRightEdge
             else vpos) <$>
-     current (_playerEntity^.entityPosition) <*>
+     current dPlayerPos <*>
      current vpX <@ _eRefresh)
 
   vpY <-
@@ -67,7 +73,7 @@ mkViewport threshold (ScreenSize (vpW, vpH)) Controls{..} Player{..} Map{..} = m
           toTopEdge = (vpos + threshold) - epos^._y
 
           toBottomEdge =
-            (epos^._y + _playerEntity^.entityHeight.to unHeight) -
+            (epos^._y + unHeight playerHeight) -
             (vpos + unHeight _vpHeight - threshold)
         in
           if toTopEdge > 0
@@ -76,7 +82,7 @@ mkViewport threshold (ScreenSize (vpW, vpH)) Controls{..} Player{..} Map{..} = m
             if toBottomEdge > 0
             then min (unHeight _mapHeight - unHeight _vpHeight) $ vpos + toBottomEdge
             else vpos) <$>
-     current (_playerEntity^.entityPosition) <*>
+     current dPlayerPos <*>
      current vpY <@ _eRefresh)
 
   let _vpPosition = V2 <$> vpX <*> vpY

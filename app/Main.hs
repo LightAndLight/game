@@ -1,9 +1,8 @@
 {-# language FlexibleContexts #-}
 {-# language FlexibleInstances, MultiParamTypeClasses #-}
-{-# language GADTs, StandaloneDeriving #-}
+{-# language GADTs #-}
 {-# language RecursiveDo #-}
 {-# language RecordWildCards #-}
-{-# language TemplateHaskell #-}
 {-# language ScopedTypeVariables #-}
 module Main where
 
@@ -11,47 +10,30 @@ import Reflex
 import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
-import Control.Lens.Getter (uses, view)
-import Control.Lens.Lens (Lens', lens)
-import Control.Lens.Setter (assign)
-import Control.Monad (replicateM, void, join)
+import Control.Lens.Getter ((^.))
+import Control.Monad (replicateM, join)
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State.Strict
-  (MonadState, evalStateT, get, put, StateT(..), runStateT)
-import Data.Coerce (coerce)
-import Data.Dependent.Sum (DSum(..))
-import Data.Functor.Identity (Identity(..))
-import Data.Functor.Misc (ComposeMaybe(..))
-import Data.GADT.Compare ((:~:)(..), GOrdering(..), GEq(..), GCompare(..))
-import Data.GADT.Show (GShow(..))
-import Data.Semigroup ((<>))
-import Data.Traversable (for)
-import Graphics.Gloss (Display(..), Picture, pictures, white, blank, circle)
+import Graphics.Gloss (Display(..), Picture, pictures, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
-import System.Random (Random, StdGen, getStdGen, next, randomR)
+import System.Random (getStdGen)
 import Linear.V2 (V2(..))
 
-import qualified Data.Dependent.Map as DMap
-
-import Controls (mkControls)
+import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
-import Entity (Entity, getMkEntity, entity, entityId)
-import Entity.Box (Box, mkBox)
-import Entity.Player (Player, mkPlayer)
-import Grid (Grid)
+import Entity
+  (Entity, mkMovingEntity, mkStaticEntity, getMkEntity, entityQuadrants)
+import Entity.Box (mkBoxOpen, mkBoxPicture)
+import Entity.Player (mkPlayerPos)
 import GridManager.Base (runGridManagerT)
 import GridManager.Class (GridManager)
 import Map (Map(..))
 import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen, randomInt)
-import Render.Entity (renderedEntity, renderedEntityE)
-import Render.Map (renderedMap, renderedMapE)
-import Unique (Unique)
+import Render.Entity (renderedEntity)
+import Render.Map (renderedMap)
 import UniqueSupply.Base (runUniqueSupplyT)
 import UniqueSupply.Class (UniqueSupply(..))
-import Viewport (ScreenSize(..), mkViewport, _vpWidth)
-
-import Control.Lens (_1, over)
+import Viewport (ScreenSize(..), mkViewport)
 
 data Assets
   = Assets
@@ -80,42 +62,70 @@ game screenSize Assets{..} refresh input = mdo
 
   ePostBuild <- getPostBuild
 
+
+  -- Make a player
+  let
+    pWidth = Width 20
+    pHeight = Height 20
+    pPos = V2 0 0
+
+  dPlayerPos <- mkPlayerPos mp controls pWidth pHeight pPos
+  let
+    dPlayerPicture = pure _assetsPlayerPicture
+    ePlayerInteract = current dPlayerPos <@ _eSpacePressed controls
+
   eMkPlayerEntity <-
-    fmap snd <$>
     getMkEntity
       ePostBuild
       mp
       _assetsPlayerPicture
-      (Width 20)
-      (Height 20)
-      (V2 0 0)
+      pWidth
+      pHeight
+      pPos
 
-  (_, ePlayer) <-
+  (_, ePlayerEntity) <-
     runWithReplace
       (pure ())
-      ((\mkE -> mkPlayer ePostBuild mkE controls) <$> eMkPlayerEntity)
+      ((\mkE -> mkMovingEntity mkE dPlayerPicture dPlayerPos) <$> eMkPlayerEntity)
 
-  eMkBoxWithPlayer <-
+  dPlayerQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> ePlayerEntity)
+
+
+
+  -- Make a box
+  let
+    bWidth = Width 10
+    bHeight = Height 10
+    bPos = V2 40 40
+    dBoxPos = pure bPos
+
+  eMkBoxEntity <-
     getMkEntity
-      ePlayer
+      ePlayerEntity
       mp
       _assetsBoxClosedPicture
-      (Width 10)
-      (Height 10)
-      (V2 40 40)
+      bWidth
+      bHeight
+      bPos
 
-  (_, eBox) <-
+  dBoxOpen <-
+    mkBoxOpen
+      (dPlayerQuadrants, dPlayerPos, bWidth, bHeight)
+      (dBoxQuadrants, dBoxPos, pWidth, pHeight)
+      ePlayerInteract
+
+  let dBoxPicture = mkBoxPicture (_assetsBoxClosedPicture, _assetsBoxOpenPicture) dBoxOpen
+
+  (_, eBoxEntity) <-
     runWithReplace
       (pure ())
-      ((\(player, mbe) ->
-          mkBox
-            (() <$ ePlayer)
-            mbe
-            player
-            (_assetsBoxClosedPicture, _assetsBoxOpenPicture)) <$>
-        eMkBoxWithPlayer)
+      ((\mkE -> mkStaticEntity mkE dBoxPicture) <$> eMkBoxEntity)
 
-  eRandomInts <- replicateM 5 $ randomInt ePlayer
+  dBoxQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> eBoxEntity)
+
+
+
+  eRandomInts <- replicateM 5 $ randomInt ePlayerEntity
 
 {-
   boxesCoords <-
@@ -130,19 +140,12 @@ game screenSize Assets{..} refresh input = mdo
       mkBox mp player (_assetsBoxClosedPicture, _assetsBoxOpenPicture) x y 10 10
   -}
 
-  (_, eViewport) <-
-    runWithReplace
-      (pure ())
-      ((\p -> mkViewport 100 screenSize controls p mp) <$> ePlayer)
+  viewport <- mkViewport 100 screenSize mp controls (pWidth, pHeight, dPlayerPos)
 
-  renderedPlayer <- renderedEntityE eViewport ePlayer
-  renderedBox <- renderedEntityE eViewport eBox
-  renderedMap <- renderedMapE eViewport mp
   pure . fmap pictures . sequence $
-    -- [ renderedMap viewport mp
-    [ renderedMap
-    , renderedPlayer
-    , renderedBox
+    [ renderedMap viewport mp
+    , renderedEntity viewport (pWidth, pHeight, dPlayerPos) dPlayerPicture
+    , renderedEntity viewport (bWidth, bHeight, dBoxPos) dBoxPicture
     ]
     -- <> fmap (renderedEntity viewport) boxes
 

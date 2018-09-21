@@ -17,7 +17,7 @@ import Linear.V2 (V2(..), R1(..), R2(..))
 import Controls (Controls(..))
 import Dimensions (Width, Height)
 import Entity
-  (HasEntity(..), Entity, MkEntity, entityPosition, getMkEntity, mkMovingEntity)
+  (HasEntity(..), Entity, MkEntity, entityPosition, getMkEntity, mkEntityPos, mkMovingEntity)
 import GridManager.Class (GridManager)
 import Map (Map)
 import UniqueSupply.Class (UniqueSupply)
@@ -31,33 +31,28 @@ data Player t
 instance HasEntity Player where
   entity = lens _playerEntity (\p e -> p { _playerEntity = e })
 
-mkPlayer
-  :: ( MonadHold t m, Reflex t, MonadFix m
-     , GridManager t (Entity t) m, UniqueSupply t m
-     )
-  => Event t ()
-  -> MkEntity
+mkPlayerPos
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => Map
   -> Controls t
-  -> m (Player t)
-mkPlayer eAdd mkE Controls{..} = mdo
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> m (Dynamic t (V2 Float))
+mkPlayerPos mp Controls{..} w h pos = mdo
   let
     eX =
       (.) <$>
       ((\b n -> if b then n+5 else n) <$> current _dDHeld) <*>
       ((\b n -> if b then n-5 else n) <$> current _dAHeld) <@>
-      ((^. _x) <$> bPlayerPos <@ _eRefresh)
+      ((^. _x) <$> current dPlayerPos <@ _eRefresh)
 
     eY =
       (.) <$>
       ((\b n -> if b then n+5 else n) <$> current _dSHeld) <*>
       ((\b n -> if b then n-5 else n) <$> current _dWHeld) <@>
-      ((^. _y) <$> bPlayerPos <@ _eRefresh)
+      ((^. _y) <$> current dPlayerPos <@ _eRefresh)
 
-  _playerEntity <- mkMovingEntity eAdd mkE never eX eY
+  dPlayerPos <- mkEntityPos mp w h pos eX eY
 
-  let
-    bPlayerPos = current $ _playerEntity^.entityPosition
-    _playerInteract = bPlayerPos <@ _eSpacePressed
-    player = Player{..}
-
-  pure player
+  pure dPlayerPos

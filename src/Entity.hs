@@ -6,6 +6,7 @@ module Entity
   ( Entity
   , MkEntity
   , getMkEntity
+  , mkEntityPos
   , mkStaticEntity
   , mkMovingEntity
   , entityId
@@ -64,42 +65,48 @@ getMkEntity
   -> Width Float -- ^ width
   -> Height Float -- ^ height
   -> V2 Float -- ^ (x, y) coordinate
-  -> m (Event t (a, MkEntity))
+  -> m (Event t MkEntity)
 getMkEntity eBuild mp a b d e = do
   eUnique <- requestUnique eBuild
-  let eResult = coincidence $ (\u -> (,) u <$> eBuild) <$> eUnique
-  pure $ (\(u, res) -> (res, MkEntity u a b d e mp)) <$> eResult
+  pure $ (\u -> MkEntity u a b d e mp) <$> eUnique
+
+mkEntityPos
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => Map
+  -> Width Float
+  -> Height Float
+  -> V2 Float -- ^ initial position
+  -> Event t Float -- ^ when x coordinate changed
+  -> Event t Float -- ^ when y coordinate changed
+  -> m (Dynamic t (V2 Float))
+mkEntityPos Map{..} w h pos eX eY = do
+  dX <-
+    holdUniqDyn =<<
+    holdDyn
+      (pos^._x)
+      (max 0 . min (unWidth _mapWidth - unWidth w / 2) <$> eX)
+
+  dY <-
+    holdUniqDyn =<<
+    holdDyn
+      (pos^._y)
+      (max 0 . min (unHeight _mapHeight - unHeight h / 2) <$> eY)
+
+  pure $ V2 <$> dX <*> dY
 
 mkMovingEntity
   :: ( MonadHold t m, MonadFix m
      , GridManager t (Entity t) m
      )
-  => Event t ()
-  -> MkEntity
-  -> Event t Picture
-  -> Event t Float -- ^ when x coordinate changed
-  -> Event t Float -- ^ when y coordinate changed
+  => MkEntity
+  -> Dynamic t Picture
+  -> Dynamic t (V2 Float)
   -> m (Entity t)
-mkMovingEntity eAdd MkEntity{..} ePicture eX eY = do
-  _entityPicture <- holdDyn _mkEntityPicture ePicture
-
-  dX <-
-    holdUniqDyn =<<
-    holdDyn
-      (_mkEntityPosition^._x)
-      (max 0 . min (unWidth (_mapWidth _mkEntityMap) - unWidth _mkEntityWidth / 2) <$> eX)
-
-  dY <-
-    holdUniqDyn =<<
-    holdDyn
-      (_mkEntityPosition^._y)
-      (max 0 . min (unHeight (_mapHeight _mkEntityMap) - unHeight _mkEntityHeight / 2) <$> eY)
-
+mkMovingEntity MkEntity{..} _entityPicture _entityPosition = do
   let
     _entityId = _mkEntityId
     _entityWidth = _mkEntityWidth
     _entityHeight = _mkEntityHeight
-    _entityPosition = V2 <$> dX <*> dY
 
   _entityQuadrants <- getQuadrants _entityId
 
@@ -195,41 +202,46 @@ intersectsEE a b = do
     ((^. _y) <$> e2Position)
 
 intersects
-  :: (Reflex t, HasEntity a, HasEntity b)
-  => a t
-  -> b t
+  :: Reflex t
+  => (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
+  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
   -> Dynamic t Bool
-intersects a b =
-  let
-    e1 = a ^. entity
-    e2 = b ^. entity
-  in
-    (\e1Qs e2Qs e1Left e1Top e2Left e2Top ->
-      let
-        e1Right = e1Left + e1^.entityWidth.to unWidth
-        e1Bottom = e1Top + e1^.entityHeight.to unHeight
-        e2Right = e2Left + e2^.entityWidth.to unWidth
-        e2Bottom = e2Top + e2^.entityHeight.to unHeight
-      in
-        any (`elem` e1Qs) e2Qs &&
-        not
-          (e1Right < e2Left ||
-           e1Top > e2Bottom ||
-           e1Left > e2Right ||
-           e1Bottom < e2Top)) <$>
-    (e1^.entityQuadrants) <*>
-    (e2^.entityQuadrants) <*>
-    ((^. _x) <$> e1^.entityPosition) <*>
-    ((^. _y) <$> e1^.entityPosition) <*>
-    ((^. _x) <$> e2^.entityPosition) <*>
-    ((^. _y) <$> e2^.entityPosition)
+intersects
+  (dE1Quadrants, dE1Position, e1Width, e1Height)
+  (dE2Quadrants, dE2Position, e2Width, e2Height) =
+
+  (\e1Qs e2Qs e1Left e1Top e2Left e2Top ->
+    let
+      e1Right = e1Left + unWidth e1Width
+      e1Bottom = e1Top + unHeight e1Height
+      e2Right = e2Left + unWidth e2Width
+      e2Bottom = e2Top + unHeight e2Height
+    in
+      any (`elem` e1Qs) e2Qs &&
+      not
+        (e1Right < e2Left ||
+          e1Top > e2Bottom ||
+          e1Left > e2Right ||
+          e1Bottom < e2Top)) <$>
+  dE1Quadrants <*>
+  dE2Quadrants <*>
+  ((^. _x) <$> dE1Position) <*>
+  ((^. _y) <$> dE1Position) <*>
+  ((^. _x) <$> dE2Position) <*>
+  ((^. _y) <$> dE2Position)
 
 mkStaticEntity
   :: ( MonadHold t m, Reflex t, MonadFix m
      , GridManager t (Entity t) m
      )
-  => Event t ()
-  -> MkEntity
-  -> Event t Picture -- ^ when the picture changes
+  => MkEntity
+  -> Dynamic t Picture
   -> m (Entity t)
-mkStaticEntity eAdd mkE pic = mkMovingEntity eAdd mkE pic never never
+mkStaticEntity mkE@MkEntity{..} pic =
+  mkEntityPos
+    _mkEntityMap
+    _mkEntityWidth
+    _mkEntityHeight
+    _mkEntityPosition
+    never never >>=
+  mkMovingEntity mkE pic
