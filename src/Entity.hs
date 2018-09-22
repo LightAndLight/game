@@ -4,9 +4,6 @@
 {-# language TemplateHaskell #-}
 module Entity
   ( Entity
-  , MkEntity
-  , mkEntity
-  , getMkEntity
   , mkEntityPos
   , mkStaticEntity
   , mkMovingEntity
@@ -23,7 +20,7 @@ where
 
 import Reflex
 
-import Control.Lens.Getter ((^.), Getter, to)
+import Control.Lens.Getter ((^.), Getter)
 import Control.Lens.Lens (Lens')
 import Control.Lens.TH (makeLensesFor)
 import Control.Monad.Fix (MonadFix)
@@ -35,27 +32,6 @@ import Grid (Quadrant)
 import GridManager.Class (GridManager, registerEntity, getQuadrants)
 import Map (Map(..))
 import Unique (Unique)
-import UniqueSupply.Class (UniqueSupply, requestUnique)
-
-data MkEntity
-  = MkEntity
-  { _mkEntityId :: Unique
-  , _mkEntityPicture :: Picture
-  , _mkEntityWidth :: Width Float
-  , _mkEntityHeight :: Height Float
-  , _mkEntityPosition :: V2 Float
-  , _mkEntityMap :: Map
-  }
-
-mkEntity
-  :: Unique
-  -> Picture
-  -> Width Float
-  -> Height Float
-  -> V2 Float
-  -> Map
-  -> MkEntity
-mkEntity = MkEntity
 
 data Entity t
   = Entity
@@ -66,19 +42,6 @@ data Entity t
   , _entityPosition :: Dynamic t (V2 Float)
   , _entityQuadrants :: Dynamic t [Quadrant]
   }
-
-getMkEntity
-  :: UniqueSupply t m
-  => Event t a -- ^ event which causes entity construction
-  -> Map -- ^ initial picture
-  -> Picture -- ^ initial picture
-  -> Width Float -- ^ width
-  -> Height Float -- ^ height
-  -> V2 Float -- ^ (x, y) coordinate
-  -> m (Event t MkEntity)
-getMkEntity eBuild mp a b d e = do
-  eUnique <- requestUnique eBuild
-  pure $ (\u -> MkEntity u a b d e mp) <$> eUnique
 
 mkEntityPos
   :: (Reflex t, MonadHold t m, MonadFix m)
@@ -108,15 +71,18 @@ mkMovingEntity
   :: ( MonadHold t m, MonadFix m
      , GridManager t (Entity t) m
      )
-  => MkEntity
+  => Unique
+  -> Width Float
+  -> Height Float
   -> Dynamic t Picture
   -> Dynamic t (V2 Float)
   -> m (Entity t)
-mkMovingEntity MkEntity{..} _entityPicture _entityPosition = do
-  let
-    _entityId = _mkEntityId
-    _entityWidth = _mkEntityWidth
-    _entityHeight = _mkEntityHeight
+mkMovingEntity
+  _entityId
+  _entityWidth
+  _entityHeight
+  _entityPicture
+  _entityPosition = do
 
   _entityQuadrants <- getQuadrants _entityId
 
@@ -197,14 +163,13 @@ mkStaticEntity
   :: ( MonadHold t m, Reflex t, MonadFix m
      , GridManager t (Entity t) m
      )
-  => MkEntity
+  => Map
+  -> Unique
+  -> Width Float
+  -> Height Float
+  -> V2 Float
   -> Dynamic t Picture
   -> m (Entity t)
-mkStaticEntity mkE@MkEntity{..} pic =
-  mkEntityPos
-    _mkEntityMap
-    _mkEntityWidth
-    _mkEntityHeight
-    _mkEntityPosition
-    never never >>=
-  mkMovingEntity mkE pic
+mkStaticEntity mp eid ew eh epos pic =
+  mkEntityPos mp ew eh epos never never >>=
+  mkMovingEntity eid ew eh pic

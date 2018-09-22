@@ -17,10 +17,9 @@ import Linear.V2 (V2(..), R1(..), R2(..))
 import Controls (Controls(..))
 import Dimensions (Width, Height)
 import Entity
-  (HasEntity(..), Entity, MkEntity, entityPosition, getMkEntity, mkEntityPos, mkMovingEntity)
+  (HasEntity(..), Entity, entityPosition, mkEntityPos, mkMovingEntity)
 import GridManager.Class (GridManager)
 import Map (Map)
-import UniqueSupply.Class (UniqueSupply)
 
 data Player t
   = Player

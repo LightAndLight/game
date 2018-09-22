@@ -4,21 +4,15 @@
 module Entity.Box where
 
 import Reflex
-import Control.Lens.Getter ((^.))
 import Control.Lens.Lens (lens)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
 import Linear.V2 (V2)
 
 import Dimensions (Width, Height)
-import Entity
-  ( HasEntity(..), Entity, MkEntity(..), mkStaticEntity, intersects
-  , entityQuadrants, entityPosition, entityWidth, entityHeight
-  )
-import Entity.Player (Player(..))
+import Entity (HasEntity(..), Entity, intersects)
 import Grid (Quadrant)
 import GridManager.Class (GridManager)
-import UniqueSupply.Class (UniqueSupply)
 
 data Box t
   = Box

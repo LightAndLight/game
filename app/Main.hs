@@ -27,7 +27,7 @@ import qualified Data.Map as Map
 import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity
-  (Entity, mkEntity, mkMovingEntity, mkStaticEntity, getMkEntity, entityQuadrants)
+  (Entity, mkMovingEntity, mkStaticEntity, entityQuadrants)
 import Entity.Box (mkBoxOpen, mkBoxPicture)
 import Entity.Player (mkPlayerPos)
 import Grid (Quadrant)
@@ -71,14 +71,7 @@ makeBox mp eCreate (openPic, closedPic) bWidth bHeight bPos playerIntersect ePla
   let
     dBoxPos = pure bPos
 
-  eMkBoxEntity <-
-    getMkEntity
-      eCreate
-      mp
-      closedPic
-      bWidth
-      bHeight
-      bPos
+  eUnique <- requestUnique eCreate
 
   dBoxOpen <-
     mkBoxOpen
@@ -91,7 +84,8 @@ makeBox mp eCreate (openPic, closedPic) bWidth bHeight bPos playerIntersect ePla
   (_, eBoxEntity) <-
     runWithReplace
       (pure ())
-      ((\mkE -> mkStaticEntity mkE dBoxPicture) <$> eMkBoxEntity)
+      ((\u -> mkStaticEntity mp u bWidth bHeight bPos dBoxPicture) <$>
+       eUnique)
 
   dBoxQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> eBoxEntity)
 
@@ -113,18 +107,7 @@ makeBox'
   -> m (Dynamic t Picture, Dynamic t (V2 Float), Width Float, Height Float)
 makeBox' mp u (openPic, closedPic) bWidth bHeight bPos playerIntersect ePlayerInteract = mdo
   -- Make a box
-  let
-    dBoxPos = pure bPos
-
-  let
-    boxMkEntity =
-      mkEntity
-        u
-        closedPic
-        bWidth
-        bHeight
-        bPos
-        mp
+  let dBoxPos = pure bPos
 
   dBoxOpen <-
     mkBoxOpen
@@ -134,7 +117,7 @@ makeBox' mp u (openPic, closedPic) bWidth bHeight bPos playerIntersect ePlayerIn
 
   let dBoxPicture = mkBoxPicture (openPic, closedPic) dBoxOpen
 
-  boxEntity <- mkStaticEntity boxMkEntity dBoxPicture
+  boxEntity <- mkStaticEntity mp u bWidth bHeight bPos dBoxPicture
 
   let dBoxQuadrants = boxEntity^.entityQuadrants
 
@@ -160,6 +143,52 @@ switchHoldUnique eCreate f =
   requestUnique eCreate >>=
   switchHoldPromptly never . fmap f
 
+makePlayer
+  :: ( MonadHold t m, MonadFix m
+     , UniqueSupply t m, GridManager t (Entity t) m
+     , Adjustable t m
+     )
+  => Game.Map
+  -> Controls t
+  -> Event t a
+  -> Picture
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> m ( Dynamic t [Quadrant]
+       , Dynamic t Picture
+       , Dynamic t (V2 Float)
+       , Width Float
+       , Height Float
+       , Event t (V2 Float)
+       )
+makePlayer mp controls eCreate pic pWidth pHeight pPos = do
+  -- Make a player
+  dPlayerPos <- mkPlayerPos mp controls pWidth pHeight pPos
+  let
+    dPlayerPicture = pure pic
+    ePlayerInteract = current dPlayerPos <@ _eSpacePressed controls
+
+  eUnique <- requestUnique eCreate
+
+  (_, ePlayerEntity) <-
+    runWithReplace
+      (pure ())
+      ((\u -> mkMovingEntity u pWidth pHeight dPlayerPicture dPlayerPos) <$>
+       eUnique)
+
+  dPlayerQuadrants <-
+    join <$> holdDyn (pure []) ((^.entityQuadrants) <$> ePlayerEntity)
+
+  pure
+    ( dPlayerQuadrants
+    , dPlayerPicture
+    , dPlayerPos
+    , pWidth
+    , pHeight
+    , ePlayerInteract
+    )
+
 game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
@@ -179,38 +208,20 @@ game screenSize Assets{..} refresh input = mdo
 
   ePostBuild <- getPostBuild
 
-
-  -- Make a player
-  let
-    pWidth = Width 20
-    pHeight = Height 20
-    pPos = V2 0 0
-
-  dPlayerPos <- mkPlayerPos mp controls pWidth pHeight pPos
-  let
-    dPlayerPicture = pure _assetsPlayerPicture
-    ePlayerInteract = current dPlayerPos <@ _eSpacePressed controls
-
-  eMkPlayerEntity <-
-    getMkEntity
-      ePostBuild
+  (dPlayerQuadrants, dPlayerPicture, dPlayerPos, pWidth, pHeight, ePlayerInteract) <-
+    makePlayer
       mp
+      controls
+      ePostBuild
       _assetsPlayerPicture
-      pWidth
-      pHeight
-      pPos
-
-  (_, ePlayerEntity) <-
-    runWithReplace
-      (pure ())
-      ((\mkE -> mkMovingEntity mkE dPlayerPicture dPlayerPos) <$> eMkPlayerEntity)
-
-  dPlayerQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> ePlayerEntity)
+      (Width 20)
+      (Height 20)
+      (V2 0 0)
 
   (dBoxPicture, dBoxPos, bWidth, bHeight) <-
     makeBox
       mp
-      ePlayerEntity
+      ePostBuild
       (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
       (Width 10)
       (Height 10)
@@ -220,8 +231,8 @@ game screenSize Assets{..} refresh input = mdo
 
   eInserts <-
     replicateM 5 $ do
-      eRandomPos <- randomPosition ePlayerEntity (0, 990) (0, 990)
-      switchHoldUnique ePlayerEntity (\u -> Map.singleton u . Just <$> eRandomPos)
+      eRandomPos <- randomPosition ePostBuild (0, 990) (0, 990)
+      switchHoldUnique ePostBuild (\u -> Map.singleton u . Just <$> eRandomPos)
 
   dBoxes <-
     listHoldWithKey
