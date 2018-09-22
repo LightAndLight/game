@@ -10,10 +10,11 @@ import Reflex
 import Reflex.Network (networkView)
 import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
+import Reflex.Workflow (Workflow(..), workflow)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter ((^.))
-import Control.Monad (replicateM, join)
+import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
 import Data.Map (Map)
@@ -117,10 +118,30 @@ game screenSize Assets{..} refresh input = mdo
       eRandomPos <- randomPosition eCreate (0, 990) (0, 990)
       switchHoldUnique eCreate (\u -> Map.singleton u . Just <$> eRandomPos)
 
-  eInitial <- mkUniqueAndPos _boxOpenedFirstTime
+    mkUniqueAndPosNotOnPlayer
+      :: Event t a
+      -> m (Event t (Map Unique (Maybe (V2 Float))))
+    mkUniqueAndPosNotOnPlayer eCreate =
+      fmap switchDyn . workflow $
+        let
+          w = Workflow $ do
+            eRandomPos <- mkUniqueAndPos eCreate
+            let
+              eRetry =
+                ffilter id
+                ((\a -> any $ maybe False (a ==)) <$>
+                 current _playerPosition <@>
+                 eRandomPos)
+            pure (eRandomPos, w <$ eRetry)
+        in
+          w
+
+  -- eInitial <- mkUniqueAndPos _boxOpenedFirstTime
+  eInitial <- mkUniqueAndPosNotOnPlayer _boxOpenedFirstTime
   eLater <- networkView $
     fmap fold .
-    traverse (mkUniqueAndPos . (^.boxOpenedFirstTime)) <$>
+    -- traverse (mkUniqueAndPos . (^.boxOpenedFirstTime)) <$>
+    traverse (mkUniqueAndPosNotOnPlayer . (^.boxOpenedFirstTime)) <$>
     dBoxes
   eInsert <- switchHold never eLater
 
