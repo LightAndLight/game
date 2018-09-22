@@ -5,6 +5,7 @@
 module RandomGen.Base where
 
 import Reflex
+import Reflex.NotReady.Class (NotReady(..))
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.State (MonadState(..), runState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
@@ -35,6 +36,10 @@ instance MonadTrans (RandomGenT t) where
 instance MonadState s m => MonadState s (RandomGenT t m) where
   get = lift get
   put = lift . put
+
+instance NotReady t m => NotReady t (RandomGenT t m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
 
 instance (Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (RandomGenT t m) where
   runWithReplace a b = RandomGenT $ runWithReplace (unRandomGenT a) (unRandomGenT <$> b)

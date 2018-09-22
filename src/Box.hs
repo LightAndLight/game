@@ -29,6 +29,7 @@ data Box t
   = Box
   { _boxQuadrants :: Dynamic t [Quadrant]
   , _boxOpen :: Dynamic t Bool
+  , _boxOpenedFirstTime :: Event t ()
   , _boxPicture :: Dynamic t Picture
   , _boxPosition :: Dynamic t (V2 Float)
   , _boxWidth :: Width Float
@@ -89,6 +90,9 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
 
   _boxOpen <- mkBoxOpen player box
 
+  _boxOpenedFirstTime <-
+    switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
+
   let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
   (_, edQuadrants) <-
@@ -124,6 +128,9 @@ mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
   let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
   _boxQuadrants <- mkStaticEntity mp u _boxWidth _boxHeight bPos
+
+  _boxOpenedFirstTime <-
+    switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
 
   let box = Box{..}
 

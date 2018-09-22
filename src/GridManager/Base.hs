@@ -5,6 +5,7 @@
 module GridManager.Base where
 
 import Reflex
+import Reflex.NotReady.Class (NotReady(..))
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.Reader (ReaderT, runReaderT, ask)
 import Control.Monad.State (MonadState(..))
@@ -164,6 +165,10 @@ instance RandomGen t m => RandomGen t (GridManagerT t g m) where
 instance MonadState s m => MonadState s (GridManagerT t g m) where
   get = lift get
   put = lift . put
+
+instance NotReady t m => NotReady t (GridManagerT t g m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
 
 registerEntityImpl
   :: (Reflex t, Monad m)

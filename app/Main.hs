@@ -7,12 +7,17 @@
 module Main where
 
 import Reflex
+import Reflex.Network (networkView)
+import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
+import Control.Lens.Getter ((^.))
 import Control.Monad (replicateM, join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
+import Data.Map (Map)
+import Data.Semigroup ((<>))
 import Graphics.Gloss (Display(..), Picture, pictures, blank, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
@@ -20,7 +25,7 @@ import Linear.V2 (V2(..))
 
 import qualified Data.Map as Map
 
-import Box (Box(..), mkBox, mkBox')
+import Box (Box(..), mkBox, mkBox', boxOpenedFirstTime)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (toEntity)
@@ -71,6 +76,7 @@ game
    . ( Reflex t, MonadHold t m, MonadFix m
      , PostBuild t m, Adjustable t m
      , GridManager t () m, UniqueSupply t m, RandomGen t m
+     , NotReady t m
      )
   => ScreenSize Float
   -> Assets
@@ -105,15 +111,23 @@ game screenSize Assets{..} refresh input = mdo
       (V2 40 40)
       player
 
-  eInserts <-
-    replicateM 5 $ do
-      eRandomPos <- randomPosition ePostBuild (0, 990) (0, 990)
-      switchHoldUnique ePostBuild (\u -> Map.singleton u . Just <$> eRandomPos)
+  let
+    mkUniqueAndPos :: Event t a -> m (Event t (Map Unique (Maybe (V2 Float))))
+    mkUniqueAndPos eCreate = do
+      eRandomPos <- randomPosition eCreate (0, 990) (0, 990)
+      switchHoldUnique eCreate (\u -> Map.singleton u . Just <$> eRandomPos)
 
-  dBoxes <-
+  eInitial <- mkUniqueAndPos _boxOpenedFirstTime
+  eLater <- networkView $
+    fmap fold .
+    traverse (mkUniqueAndPos . (^.boxOpenedFirstTime)) <$>
+    dBoxes
+  eInsert <- switchHold never eLater
+
+  dBoxes :: Dynamic t (Map Unique (Box t)) <-
     listHoldWithKey
       mempty
-      (fold eInserts)
+      (eInitial <> eInsert)
       (\u pos ->
           mkBox'
             mp

@@ -4,6 +4,7 @@
 module UniqueSupply.Base where
 
 import Reflex
+import Reflex.NotReady.Class (NotReady(..))
 import Control.Concurrent.Supply (Supply, freshId)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.State (MonadState(..), runState, gets)
@@ -81,3 +82,7 @@ instance GridManager t g m => GridManager t g (UniqueSupplyT t m) where
 instance RandomGen t m => RandomGen t (UniqueSupplyT t m) where
   randomInt = lift . randomInt
   randomIntR = lift . randomIntR
+
+instance NotReady t m => NotReady t (UniqueSupplyT t m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
