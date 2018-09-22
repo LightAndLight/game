@@ -1,28 +1,16 @@
 {-# language FlexibleContexts #-}
+{-# language FunctionalDependencies, MultiParamTypeClasses #-}
+{-# language DefaultSignatures #-}
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
 {-# language TemplateHaskell #-}
-module Entity
-  ( Entity
-  , mkEntityPos
-  , mkStaticEntity
-  , mkMovingEntity
-  , entityId
-  , entityPicture
-  , entityWidth
-  , entityHeight
-  , entityPosition
-  , entityQuadrants
-  , intersects
-  , HasEntity(..)
-  )
-where
+module Entity where
 
 import Reflex
 
-import Control.Lens.Getter ((^.), Getter)
+import Control.Lens.Getter ((^.))
 import Control.Lens.Lens (Lens')
-import Control.Lens.TH (makeLensesFor)
+import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
 import Linear.V2 (V2(..), R1(..), R2(..))
@@ -35,13 +23,44 @@ import Unique (Unique)
 
 data Entity t
   = Entity
-  { _entityId :: Unique
+  { _entityQuadrants :: Dynamic t [Quadrant]
+  , _entityPosition :: Dynamic t (V2 Float)
   , _entityPicture :: Dynamic t Picture
   , _entityWidth :: Width Float
   , _entityHeight :: Height Float
-  , _entityPosition :: Dynamic t (V2 Float)
-  , _entityQuadrants :: Dynamic t [Quadrant]
   }
+makeLenses ''Entity
+
+class HasQuadrants t e | e -> t where
+  quadrants :: Lens' e (Dynamic t [Quadrant])
+
+class HasPosition t e | e -> t where
+  position :: Lens' e (Dynamic t (V2 Float))
+
+class HasPicture t e | e -> t where
+  picture :: Lens' e (Dynamic t Picture)
+
+class HasWidth e where
+  width :: Lens' e (Width Float)
+
+class HasHeight e where
+  height :: Lens' e (Height Float)
+
+class ToEntity t e | e -> t where
+  toEntity :: e -> Entity t
+  default toEntity
+    :: ( HasQuadrants t e, HasPosition t e, HasPicture t e
+       , HasWidth e, HasHeight e
+       )
+    => e -> Entity t
+  toEntity e =
+    Entity
+    { _entityQuadrants = e ^. quadrants
+    , _entityPosition = e ^. position
+    , _entityPicture = e ^. picture
+    , _entityWidth = e ^. width
+    , _entityHeight = e ^. height
+    }
 
 mkEntityPos
   :: (Reflex t, MonadHold t m, MonadFix m)
@@ -69,82 +88,29 @@ mkEntityPos Map{..} w h pos eX eY = do
 
 mkMovingEntity
   :: ( MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m
+     , GridManager t () m
      )
   => Unique
   -> Width Float
   -> Height Float
-  -> Dynamic t Picture
   -> Dynamic t (V2 Float)
-  -> m (Entity t)
-mkMovingEntity
-  _entityId
-  _entityWidth
-  _entityHeight
-  _entityPicture
-  _entityPosition = do
-
-  _entityQuadrants <- getQuadrants _entityId
-
-  let e = Entity{..}
-
-  registerEntity
-    _entityId
-    e
-    (_entityWidth, _entityHeight)
-    _entityPosition
-
-  pure e
-
-class HasEntity s where
-  entity :: Lens' (s t) (Entity t)
-
-instance HasEntity Entity where
-  entity = id
-
-makeLensesFor
-  [ ("_entityId", "entityId'")
-  , ("_entityPicture", "entityPicture'")
-  , ("_entityWidth", "entityWidth'")
-  , ("_entityHeight", "entityHeight'")
-  , ("_entityPosition", "entityPosition'")
-  , ("_entityQuadrants", "entityQuadrants'")
-  ]
-  ''Entity
-
-entityId :: Getter (Entity t) Unique
-entityId = entityId'
-
-entityPicture :: Getter (Entity t) (Dynamic t Picture)
-entityPicture = entityPicture'
-
-entityWidth :: Getter (Entity t) (Width Float)
-entityWidth = entityWidth'
-
-entityHeight :: Getter (Entity t) (Height Float)
-entityHeight = entityHeight'
-
-entityPosition :: Getter (Entity t) (Dynamic t (V2 Float))
-entityPosition = entityPosition'
-
-entityQuadrants :: Getter (Entity t) (Dynamic t [Quadrant])
-entityQuadrants = entityQuadrants'
+  -> m (Dynamic t [Quadrant])
+mkMovingEntity eid ew eh epos = do
+  registerEntity eid () (ew, eh) epos
+  getQuadrants eid
 
 intersects
   :: Reflex t
-  => (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
-  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
+  => Entity t
+  -> Entity t
   -> Dynamic t Bool
-intersects
-  (dE1Quadrants, dE1Position, e1Width, e1Height)
-  (dE2Quadrants, dE2Position, e2Width, e2Height) =
-
+intersects e1 e2 =
   (\e1Qs e2Qs e1Left e1Top e2Left e2Top ->
     let
-      e1Right = e1Left + unWidth e1Width
-      e1Bottom = e1Top + unHeight e1Height
-      e2Right = e2Left + unWidth e2Width
-      e2Bottom = e2Top + unHeight e2Height
+      e1Right = e1Left + unWidth (e1^.entityWidth)
+      e1Bottom = e1Top + unHeight (e1^.entityHeight)
+      e2Right = e2Left + unWidth (e2^.entityWidth)
+      e2Bottom = e2Top + unHeight (e2^.entityHeight)
     in
       any (`elem` e1Qs) e2Qs &&
       not
@@ -152,24 +118,23 @@ intersects
          e1Top > e2Bottom ||
          e1Left > e2Right ||
          e1Bottom < e2Top)) <$>
-  dE1Quadrants <*>
-  dE2Quadrants <*>
-  ((^. _x) <$> dE1Position) <*>
-  ((^. _y) <$> dE1Position) <*>
-  ((^. _x) <$> dE2Position) <*>
-  ((^. _y) <$> dE2Position)
+  (e1^.entityQuadrants) <*>
+  (e2^.entityQuadrants) <*>
+  ((^. _x) <$> e1^.entityPosition) <*>
+  ((^. _y) <$> e1^.entityPosition) <*>
+  ((^. _x) <$> e2^.entityPosition) <*>
+  ((^. _y) <$> e2^.entityPosition)
 
 mkStaticEntity
   :: ( MonadHold t m, Reflex t, MonadFix m
-     , GridManager t (Entity t) m
+     , GridManager t () m
      )
   => Map
   -> Unique
   -> Width Float
   -> Height Float
   -> V2 Float
-  -> Dynamic t Picture
-  -> m (Entity t)
-mkStaticEntity mp eid ew eh epos pic =
+  -> m (Dynamic t [Quadrant])
+mkStaticEntity mp eid ew eh epos =
   mkEntityPos mp ew eh epos never never >>=
-  mkMovingEntity eid ew eh pic
+  mkMovingEntity eid ew eh

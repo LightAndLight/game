@@ -1,26 +1,10 @@
 {-# language DeriveFunctor, StandaloneDeriving #-}
-{-# language FlexibleInstances, UndecidableInstances #-}
-{-# language GeneralizedNewtypeDeriving #-}
-{-# language LambdaCase #-}
-{-# language MultiParamTypeClasses, FunctionalDependencies #-}
-{-# language RecursiveDo #-}
-{-# language ScopedTypeVariables #-}
 module Grid where
 
 import Reflex
-import Control.Monad.Fix (MonadFix)
-import Control.Monad.Reader (ReaderT, runReaderT, ask)
-import Control.Monad.State.Strict (MonadState(..), StateT)
-import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Writer (WriterT)
-import Data.Semigroup ((<>))
-import Linear.V2 (V2(..))
 
 import Dimensions (Width(..), Height(..))
-import Unique (Unique)
-import UniqueSupply.Class (UniqueSupply)
-import UniqueMap (UniqueMap, mergeUnique)
-import qualified UniqueMap
+import UniqueMap (UniqueMap)
 
 data Grid t a
   = Grid

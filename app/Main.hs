@@ -10,13 +10,9 @@ import Reflex
 import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
-import Control.Lens.Getter ((^.))
 import Control.Monad (replicateM, join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
-import Data.Map (Map)
-import Data.Semigroup ((<>))
-import Data.These (These)
 import Graphics.Gloss (Display(..), Picture, pictures, blank, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
@@ -25,11 +21,9 @@ import Linear.V2 (V2(..))
 import qualified Data.Map as Map
 
 import Box (Box(..), mkBox, mkBox')
-import Controls (Controls(..), mkControls)
+import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
-import Entity
-  (Entity, mkMovingEntity, mkStaticEntity, entityQuadrants)
-import Grid (Quadrant)
+import Entity (toEntity)
 import GridManager.Base (runGridManagerT)
 import GridManager.Class (GridManager)
 import Player (Player(..), mkPlayer)
@@ -59,9 +53,9 @@ randomPosition
   -> (Int, Int)
   -> m (Event t (V2 Float))
 randomPosition eCreate xBounds yBounds = do
-  eRandomInt1 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ eCreate)
-  eRandomInt2 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ eCreate)
-  switchHoldPromptly never ((\w -> V2 w <$> eRandomInt2) <$> eRandomInt1)
+  eX <- fmap fromIntegral <$> randomIntR (xBounds <$ eCreate)
+  eY <- fmap fromIntegral <$> randomIntR (yBounds <$ eCreate)
+  switchHoldPromptly never ((\w -> V2 w <$> eY) <$> eX)
 
 switchHoldUnique
   :: (MonadHold t m, UniqueSupply t m)
@@ -76,7 +70,7 @@ game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
      , PostBuild t m, Adjustable t m
-     , GridManager t (Entity t) m, UniqueSupply t m, RandomGen t m
+     , GridManager t () m, UniqueSupply t m, RandomGen t m
      )
   => ScreenSize Float
   -> Assets
@@ -109,8 +103,7 @@ game screenSize Assets{..} refresh input = mdo
       (Width 10)
       (Height 10)
       (V2 40 40)
-      (_playerQuadrants, _playerPosition, _playerWidth, _playerHeight)
-      _playerInteract
+      player
 
   eInserts <-
     replicateM 5 $ do
@@ -129,21 +122,17 @@ game screenSize Assets{..} refresh input = mdo
             (Width 10)
             (Height 10)
             pos
-            (_playerQuadrants, _playerPosition, _playerWidth, _playerHeight)
-            _playerInteract)
+            player)
 
-  viewport <-
-    mkViewport 100 screenSize mp controls (_playerWidth, _playerHeight, _playerPosition)
+  viewport <- mkViewport 100 screenSize mp controls player
 
   let
     scene =
       fmap pictures . sequence $
       [ renderedMap viewport mp
-      , renderedEntity viewport (_playerWidth, _playerHeight, _playerPosition) _playerPicture
-      , renderedEntity viewport (_boxWidth, _boxHeight, _boxPosition) _boxPicture
-      , dBoxes >>=
-        foldMap
-          (\Box{..} -> renderedEntity viewport (_boxWidth, _boxHeight, _boxPosition) _boxPicture)
+      , renderedEntity viewport $ toEntity player
+      , renderedEntity viewport $ toEntity box
+      , dBoxes >>= foldMap (renderedEntity viewport . toEntity)
       ]
   join <$> holdDyn (pure blank) (scene <$ ePostBuild)
 

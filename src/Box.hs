@@ -1,20 +1,27 @@
 {-# language FlexibleContexts #-}
+{-# language FlexibleInstances, MultiParamTypeClasses #-}
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
+{-# language TemplateHaskell #-}
 module Box where
 
 import Reflex
-import Control.Lens.Getter ((^.))
+import Control.Lens.TH (makeLenses)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Linear.V2 (V2)
 
 import Dimensions (Width, Height)
-import Entity (Entity, mkStaticEntity, intersects, entityQuadrants)
+import Entity
+  ( ToEntity(..), HasQuadrants(..), HasPosition(..), HasPicture(..)
+  , HasWidth(..), HasHeight(..)
+  , mkStaticEntity, intersects
+  )
 import Graphics.Gloss (Picture)
 import Grid (Quadrant)
 import GridManager.Class (GridManager)
 import Map (Map)
+import Player (Player(..))
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 import Unique (Unique)
 
@@ -27,20 +34,27 @@ data Box t
   , _boxWidth :: Width Float
   , _boxHeight :: Height Float
   }
+makeLenses ''Box
+
+instance HasQuadrants t (Box t) where; quadrants = boxQuadrants
+instance HasPosition t (Box t) where; position = boxPosition
+instance HasPicture t (Box t) where; picture = boxPicture
+instance HasWidth (Box t) where; width = boxWidth
+instance HasHeight (Box t) where; height = boxHeight
+instance ToEntity t (Box t)
 
 mkBoxOpen
   :: (Reflex t, MonadHold t m, MonadFix m)
-  => (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float) -- ^ player intersect info
-  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float) -- ^ box intersect info
-  -> Event t a -- ^ player interact event
+  => Player t
+  -> Box t
   -> m (Dynamic t Bool)
-mkBoxOpen playerIntersect boxIntersect ePlayerInteract = mdo
+mkBoxOpen player box = mdo
   dBoxOpen <-
     holdDyn False $
     fforMaybe
       ((,) <$>
         current dBoxOpen <*>
-        current (intersects playerIntersect boxIntersect) <@ ePlayerInteract)
+        current (intersects (toEntity player) (toEntity box)) <@ _playerInteract player)
       (\(open, touching) ->
           if touching
           then Just $ not open
@@ -57,7 +71,7 @@ mkBoxPicture (open, closed) dBoxOpen =
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t (Entity t) m
+     , UniqueSupply t m, GridManager t () m
      , Adjustable t m
      )
   => Map
@@ -66,36 +80,32 @@ mkBox
   -> Width Float
   -> Height Float
   -> V2 Float
-  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
-  -> Event t (V2 Float)
+  -> Player t
   -> m (Box t)
-mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos playerIntersect ePlayerInteract = mdo
-  let
-    _boxPosition = pure bPos
+mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
+  let _boxPosition = pure bPos
 
   eUnique <- requestUnique eCreate
 
-  _boxOpen <-
-    mkBoxOpen
-      playerIntersect
-      (_boxQuadrants, _boxPosition, _boxWidth, _boxHeight)
-      ePlayerInteract
+  _boxOpen <- mkBoxOpen player box
 
   let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-  (_, eBoxEntity) <-
+  (_, edQuadrants) <-
     runWithReplace
       (pure ())
-      ((\u -> mkStaticEntity mp u _boxWidth _boxHeight bPos _boxPicture) <$>
+      ((\u -> mkStaticEntity mp u _boxWidth _boxHeight bPos) <$>
        eUnique)
 
-  _boxQuadrants <- join <$> holdDyn (pure []) ((^. entityQuadrants) <$> eBoxEntity)
+  _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
 
-  pure Box{..}
+  let box = Box{..}
+
+  pure box
 
 mkBox'
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m
+     , GridManager t () m
      , Adjustable t m
      )
   => Map
@@ -104,23 +114,18 @@ mkBox'
   -> Width Float
   -> Height Float
   -> V2 Float
-  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
-  -> Event t (V2 Float)
+  -> Player t
   -> m (Box t)
-mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos playerIntersect ePlayerInteract = mdo
+mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
   let _boxPosition = pure bPos
 
-  _boxOpen <-
-    mkBoxOpen
-      playerIntersect
-      (_boxQuadrants, _boxPosition, _boxWidth, _boxHeight)
-      ePlayerInteract
+  _boxOpen <- mkBoxOpen player box
 
   let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-  boxEntity <- mkStaticEntity mp u _boxWidth _boxHeight bPos _boxPicture
+  _boxQuadrants <- mkStaticEntity mp u _boxWidth _boxHeight bPos
 
-  let _boxQuadrants = boxEntity^.entityQuadrants
+  let box = Box{..}
 
-  pure Box{..}
+  pure box
 

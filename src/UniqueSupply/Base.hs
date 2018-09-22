@@ -6,7 +6,7 @@ module UniqueSupply.Base where
 import Reflex
 import Control.Concurrent.Supply (Supply, freshId)
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State (MonadState(..), runState, evalState, execState, gets)
+import Control.Monad.State (MonadState(..), runState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Functor.Const (Const(..))
 

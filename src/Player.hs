@@ -1,11 +1,14 @@
 {-# language FlexibleContexts #-}
+{-# language FlexibleInstances, MultiParamTypeClasses #-}
 {-# language RecursiveDo #-}
 {-# language RecordWildCards #-}
+{-# language TemplateHaskell #-}
 module Player where
 
 import Reflex
 
 import Control.Lens.Getter ((^.))
+import Control.Lens.TH (makeLenses)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
@@ -13,7 +16,11 @@ import Linear.V2 (V2, _x, _y)
 
 import Controls (Controls(..))
 import Dimensions (Width, Height)
-import Entity (Entity, mkMovingEntity, mkEntityPos, entityQuadrants)
+import Entity
+  ( ToEntity(..), HasQuadrants(..), HasPosition(..), HasPicture(..)
+  , HasWidth(..), HasHeight(..)
+  , mkMovingEntity, mkEntityPos
+  )
 import Grid (Quadrant)
 import GridManager.Class (GridManager)
 import Map (Map)
@@ -28,6 +35,13 @@ data Player t
   , _playerHeight :: Height Float
   , _playerInteract :: Event t (V2 Float)
   }
+makeLenses ''Player
+instance HasQuadrants t (Player t) where; quadrants = playerQuadrants
+instance HasPosition t (Player t) where; position = playerPosition
+instance HasPicture t (Player t) where; picture = playerPicture
+instance HasWidth (Player t) where; width = playerWidth
+instance HasHeight (Player t) where; height = playerHeight
+instance ToEntity t (Player t)
 
 mkPlayerPos
   :: (Reflex t, MonadHold t m, MonadFix m)
@@ -57,7 +71,7 @@ mkPlayerPos mp Controls{..} w h pos = mdo
 
 mkPlayer
   :: ( MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t (Entity t) m
+     , UniqueSupply t m, GridManager t () m
      , Adjustable t m
      )
   => Map
@@ -77,7 +91,7 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
 
   eUnique <- requestUnique eCreate
 
-  (_, ePlayerEntity) <-
+  (_, edQuadrants) <-
     runWithReplace
       (pure ())
       ((\u ->
@@ -85,11 +99,9 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
             u
             _playerWidth
             _playerHeight
-            _playerPicture
             _playerPosition) <$>
        eUnique)
 
-  _playerQuadrants <-
-    join <$> holdDyn (pure []) ((^.entityQuadrants) <$> ePlayerEntity)
+  _playerQuadrants <- join <$> holdDyn (pure []) edQuadrants
 
   pure Player{..}

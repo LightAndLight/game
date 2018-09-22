@@ -3,10 +3,10 @@
 module RandomGen.Class where
 
 import Reflex
-import Control.Monad.Reader (MonadReader(..), ReaderT)
-import Control.Monad.State (MonadState(..), StateT)
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.State (StateT)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Writer (MonadWriter(..), WriterT)
+import Control.Monad.Writer (WriterT)
 
 class (Reflex t, Monad m) => RandomGen t m | m -> t where
   randomInt :: Event t x -> m (Event t Int)
