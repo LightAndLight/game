@@ -56,6 +56,9 @@ mergeWithKey m f g =
 mapMaybe :: (a -> Maybe b) -> UniqueMap a -> UniqueMap b
 mapMaybe f = coerce (IntMap.mapMaybe f)
 
+filter :: (a -> Bool) -> UniqueMap a -> UniqueMap a
+filter f = coerce (IntMap.filter f)
+
 uniqueMapHold
   :: (Reflex t, MonadHold t m, MonadFix m)
   => UniqueMap a

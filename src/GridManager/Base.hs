@@ -26,7 +26,7 @@ newtype GridManagerT t g m a
   { unGridManagerT
     :: ReaderT
          (Grid t g)
-         (EventWriterT t
+         (DynamicWriterT t
             (UniqueMap (g, (Width Float, Height Float), V2 Float))
             m)
          a
@@ -68,59 +68,22 @@ runGridManagerT w h (GridManagerT m) = mdo
     grid :: Grid t g
     grid = Grid w h vc hc dTopLeft dTopRight dBottomLeft dBottomRight
 
-  (a, eMoved) <- runEventWriterT (runReaderT m grid)
+  (a, dItems) <- runDynamicWriterT (runReaderT m grid)
 
-  dTopLeft <-
-    accumDyn
-      (UniqueMap.foldrWithKey $ \k (g, dims, p) ->
-          UniqueMap.alter
-            (\_ ->
-               if inTopLeft dims p
-               then Just g
-               else Nothing)
-            k)
-      UniqueMap.empty
-      eMoved
-
-  dTopRight <-
-    accumDyn
-      (UniqueMap.foldrWithKey $ \k (g, dims, p) ->
-          UniqueMap.alter
-            (\_ ->
-               if inTopRight dims p
-               then Just g
-               else Nothing)
-            k)
-      UniqueMap.empty
-      eMoved
-
-  dBottomLeft <-
-    accumDyn
-      (UniqueMap.foldrWithKey $ \k (g, dims, p) ->
-          UniqueMap.alter
-            (\_ ->
-               if inBottomLeft dims p
-               then Just g
-               else Nothing)
-            k)
-      UniqueMap.empty
-      eMoved
-
-  dBottomRight <-
-    accumDyn
-      (UniqueMap.foldrWithKey $ \k (g, dims, p) ->
-          UniqueMap.alter
-            (\_ ->
-               if inBottomRight dims p
-               then Just g
-               else Nothing)
-            k)
-      UniqueMap.empty
-      eMoved
+  let
+    dTopLeft = filterQuadrant inTopLeft dItems
+    dTopRight = filterQuadrant inTopRight dItems
+    dBottomLeft = filterQuadrant inBottomLeft dItems
+    dBottomRight = filterQuadrant inBottomRight dItems
 
   pure a
 
   where
+    filterQuadrant test =
+      fmap $
+      UniqueMap.mapMaybe
+        (\(g, dims, p) -> if test dims p then Just g else Nothing)
+
     vc = unWidth w/2
     hc = unHeight h/2
 
@@ -207,7 +170,7 @@ registerEntityImpl
   => Unique
   -> g
   -> (Width Float, Height Float)
-  -> Event t (V2 Float)
+  -> Dynamic t (V2 Float)
   -> GridManagerT t g m ()
 registerEntityImpl a b c d =
-  GridManagerT $ tellEvent $ UniqueMap.singleton a . (,,) b c <$> d
+  GridManagerT $ tellDyn $ UniqueMap.singleton a . (,,) b c <$> d

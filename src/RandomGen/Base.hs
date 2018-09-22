@@ -6,7 +6,7 @@ module RandomGen.Base where
 
 import Reflex
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State (MonadState(..), evalState, gets)
+import Control.Monad.State (MonadState(..), runState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Functor.Const (Const(..))
 import System.Random (StdGen, next, randomR)
@@ -63,17 +63,21 @@ runRandomGenT
   -> RandomGenT t m a
   -> m a
 runRandomGenT initialGen (RandomGenT m) = mdo
-  (a, eRequest) <- runRequesterT m eResponse
-  let eResponse =
-        flip evalState initialGen .
-        traverseRequesterData
+  bGen <- hold initialGen $ snd <$> eResponse
+  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
+  let
+    eResponse =
+      (\g ->
+          flip runState g .
+          traverseRequesterData
           (\x -> do
               (n, s') <-
                 gets $
-                  case x of
-                    RandomInt -> next
-                    RandomIntR r -> randomR r
+                case x of
+                  RandomInt -> next
+                  RandomIntR r -> randomR r
               put s'
-              pure $ Const n) <$>
-        eRequest
+              pure $ Const n)) <$>
+      bGen <@>
+      eRequest
   pure a

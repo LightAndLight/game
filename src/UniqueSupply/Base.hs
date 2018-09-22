@@ -6,7 +6,7 @@ module UniqueSupply.Base where
 import Reflex
 import Control.Concurrent.Supply (Supply, freshId)
 import Control.Monad.Fix (MonadFix)
-import Control.Monad.State (MonadState(..), evalState, gets)
+import Control.Monad.State (MonadState(..), runState, evalState, execState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Functor.Const (Const(..))
 
@@ -61,16 +61,18 @@ runUniqueSupplyT
   -> UniqueSupplyT t m a
   -> m a
 runUniqueSupplyT initialSupply (UniqueSupplyT m) = mdo
-  (a, eRequest) <- runRequesterT m eResponse
-  let eResponse =
-        flip evalState initialSupply .
-        traverseRequesterData
-          (\_ -> do
-              (u, s') <- gets freshId
-              put s'
-              pure $ Const $ Unique u) <$>
-        eRequest
+  bSupply <- hold initialSupply $ snd <$> eResponse
+  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
+  let eResponse = getUniques <$> bSupply <@> eRequest
   pure a
+  where
+    getUniques is =
+      flip runState is .
+      traverseRequesterData
+        (\_ -> do
+            (u, s') <- gets freshId
+            put s'
+            pure $ Const $ Unique u)
 
 instance GridManager t g m => GridManager t g (UniqueSupplyT t m) where
   getGrid = lift getGrid

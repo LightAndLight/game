@@ -5,6 +5,7 @@
 module Entity
   ( Entity
   , MkEntity
+  , mkEntity
   , getMkEntity
   , mkEntityPos
   , mkStaticEntity
@@ -19,8 +20,6 @@ module Entity
   , HasEntity(..)
   )
 where
-
-import Debug.Trace
 
 import Reflex
 
@@ -47,6 +46,16 @@ data MkEntity
   , _mkEntityPosition :: V2 Float
   , _mkEntityMap :: Map
   }
+
+mkEntity
+  :: Unique
+  -> Picture
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> Map
+  -> MkEntity
+mkEntity = MkEntity
 
 data Entity t
   = Entity
@@ -117,7 +126,7 @@ mkMovingEntity MkEntity{..} _entityPicture _entityPosition = do
     _entityId
     e
     (_entityWidth, _entityHeight)
-    (updated _entityPosition)
+    _entityPosition
 
   pure e
 

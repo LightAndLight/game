@@ -23,7 +23,7 @@ class (Reflex t, Monad m) => GridManager t g m | m -> t g where
     :: Unique
     -> g
     -> (Width Float, Height Float)
-    -> Event t (V2 Float)
+    -> Dynamic t (V2 Float)
     -> m ()
 
 instance GridManager t g m => GridManager t g (StateT s m) where

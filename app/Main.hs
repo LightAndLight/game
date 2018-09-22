@@ -26,7 +26,7 @@ import qualified Data.Map as Map
 import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity
-  (Entity, mkMovingEntity, mkStaticEntity, getMkEntity, entityQuadrants)
+  (Entity, mkEntity, mkMovingEntity, mkStaticEntity, getMkEntity, entityQuadrants)
 import Entity.Box (mkBoxOpen, mkBoxPicture)
 import Entity.Player (mkPlayerPos)
 import Grid (Quadrant)
@@ -96,6 +96,49 @@ makeBox mp eCreate (openPic, closedPic) bWidth bHeight bPos playerIntersect ePla
 
   pure (dBoxPicture, dBoxPos, bWidth, bHeight)
 
+makeBox'
+  :: ( Reflex t, MonadHold t m, MonadFix m
+     , GridManager t (Entity t) m
+     , Adjustable t m
+     )
+  => Game.Map
+  -> Unique
+  -> (Picture, Picture)
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
+  -> Event t (V2 Float)
+  -> m (Dynamic t Picture, Dynamic t (V2 Float), Width Float, Height Float)
+makeBox' mp u (openPic, closedPic) bWidth bHeight bPos playerIntersect ePlayerInteract = mdo
+  -- Make a box
+  let
+    dBoxPos = pure bPos
+
+  let
+    boxMkEntity =
+      mkEntity
+        u
+        closedPic
+        bWidth
+        bHeight
+        bPos
+        mp
+
+  dBoxOpen <-
+    mkBoxOpen
+      playerIntersect
+      (dBoxQuadrants, dBoxPos, bWidth, bHeight)
+      ePlayerInteract
+
+  let dBoxPicture = mkBoxPicture (openPic, closedPic) dBoxOpen
+
+  boxEntity <- mkStaticEntity boxMkEntity dBoxPicture
+
+  let dBoxQuadrants = boxEntity^.entityQuadrants
+
+  pure (dBoxPicture, dBoxPos, bWidth, bHeight)
+
 game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
@@ -158,16 +201,17 @@ game screenSize Assets{..} refresh input = mdo
   eRandomInt2 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ ePlayerEntity)
   eRandomPos <- switchHoldPromptly never ((\w -> (,) w <$> eRandomInt2) <$> eRandomInt1)
 
-  let eInsert = Map.singleton 0 . Just <$> eRandomPos
+  eUnique <- requestUnique ePlayerEntity
+  eInsert <- switchHoldPromptly never $ (\u -> Map.singleton u . Just <$> eRandomPos) <$> eUnique
 
   dBoxes <-
     listHoldWithKey
-      (mempty :: Map Int (Float, Float))
+      (mempty :: Map Unique (Float, Float))
       eInsert
-      (\_ (x, y) ->
-          makeBox
+      (\u (x, y) ->
+          makeBox'
             mp
-            eInsert
+            u
             (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
             (Width 10)
             (Height 10)
