@@ -36,16 +36,16 @@ executable game
 library
   exposed-modules:       Unique
                        , UniqueMap
+                       , Box
                        , Dimensions
                        , Entity
-                       , Entity.Box
-                       , Entity.Player
                        , Grid
                        , GridManager.Base
                        , GridManager.Class
                        , Map
                        , Viewport
                        , Controls
+                       , Player
                        , RandomGen.Base
                        , RandomGen.Class
                        , Render.Entity

@@ -4,14 +4,12 @@ module Viewport where
 
 import Reflex
 
-import Control.Lens.Getter ((^.), to)
+import Control.Lens.Getter ((^.))
 import Control.Monad.Fix (MonadFix)
 import Linear.V2 (V2(..), R1(..), R2(..))
 
 import Controls (Controls(..))
 import Dimensions (Width(..), Height(..))
-import Entity (entity, entityWidth, entityHeight, entityPosition)
-import Entity.Player (Player(..))
 import Map (Map(..))
 
 newtype ScreenSize a = ScreenSize { unScreenSize :: (a, a) }
