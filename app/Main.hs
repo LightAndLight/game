@@ -13,8 +13,9 @@ import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter ((^.))
 import Control.Monad (replicateM, join)
 import Control.Monad.Fix (MonadFix)
-import Data.Foldable (foldMap)
+import Data.Foldable (foldMap, fold)
 import Data.Map (Map)
+import Data.Semigroup ((<>))
 import Data.These (These)
 import Graphics.Gloss (Display(..), Picture, pictures, blank, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
@@ -139,6 +140,26 @@ makeBox' mp u (openPic, closedPic) bWidth bHeight bPos playerIntersect ePlayerIn
 
   pure (dBoxPicture, dBoxPos, bWidth, bHeight)
 
+randomPosition
+  :: (MonadHold t m, RandomGen t m)
+  => Event t a
+  -> (Int, Int)
+  -> (Int, Int)
+  -> m (Event t (V2 Float))
+randomPosition eCreate xBounds yBounds = do
+  eRandomInt1 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ eCreate)
+  eRandomInt2 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ eCreate)
+  switchHoldPromptly never ((\w -> V2 w <$> eRandomInt2) <$> eRandomInt1)
+
+switchHoldUnique
+  :: (MonadHold t m, UniqueSupply t m)
+  => Event t a
+  -> (Unique -> Event t b)
+  -> m (Event t b)
+switchHoldUnique eCreate f =
+  requestUnique eCreate >>=
+  switchHoldPromptly never . fmap f
+
 game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
@@ -197,25 +218,23 @@ game screenSize Assets{..} refresh input = mdo
       (dPlayerQuadrants, dPlayerPos, pWidth, pHeight)
       ePlayerInteract
 
-  eRandomInt1 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ ePlayerEntity)
-  eRandomInt2 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ ePlayerEntity)
-  eRandomPos <- switchHoldPromptly never ((\w -> (,) w <$> eRandomInt2) <$> eRandomInt1)
-
-  eUnique <- requestUnique ePlayerEntity
-  eInsert <- switchHoldPromptly never $ (\u -> Map.singleton u . Just <$> eRandomPos) <$> eUnique
+  eInserts <-
+    replicateM 5 $ do
+      eRandomPos <- randomPosition ePlayerEntity (0, 990) (0, 990)
+      switchHoldUnique ePlayerEntity (\u -> Map.singleton u . Just <$> eRandomPos)
 
   dBoxes <-
     listHoldWithKey
-      (mempty :: Map Unique (Float, Float))
-      eInsert
-      (\u (x, y) ->
+      mempty
+      (fold eInserts)
+      (\u pos ->
           makeBox'
             mp
             u
             (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
             (Width 10)
             (Height 10)
-            (V2 x y)
+            pos
             (dPlayerQuadrants, dPlayerPos, pWidth, pHeight)
             ePlayerInteract)
 
