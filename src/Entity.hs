@@ -16,10 +16,11 @@ module Entity
   , entityPosition
   , entityQuadrants
   , intersects
-  , intersectsEE
   , HasEntity(..)
   )
 where
+
+import Debug.Trace
 
 import Reflex
 
@@ -84,13 +85,13 @@ mkEntityPos Map{..} w h pos eX eY = do
     holdUniqDyn =<<
     holdDyn
       (pos^._x)
-      (max 0 . min (unWidth _mapWidth - unWidth w / 2) <$> eX)
+      (max 0 . min (unWidth _mapWidth - unWidth w) <$> eX)
 
   dY <-
     holdUniqDyn =<<
     holdDyn
       (pos^._y)
-      (max 0 . min (unHeight _mapHeight - unHeight h / 2) <$> eY)
+      (max 0 . min (unHeight _mapHeight - unHeight h) <$> eY)
 
   pure $ V2 <$> dX <*> dY
 
@@ -154,53 +155,6 @@ entityPosition = entityPosition'
 entityQuadrants :: Getter (Entity t) (Dynamic t [Quadrant])
 entityQuadrants = entityQuadrants'
 
-intersectsEE
-  :: ( Reflex t, MonadHold t m
-     , HasEntity a, HasEntity b
-     )
-  => Event t (a t)
-  -> Event t (b t)
-  -> m (Behavior t Bool)
-intersectsEE a b = do
-  e1Position <-
-    switcher (pure $ V2 0 0) $ current . (^.entity.entityPosition) <$> a
-  e1Quadrants <-
-    switcher (pure []) $ current. (^.entity.entityQuadrants) <$> a
-  e1Width <- hold 0 $ (^.entity.entityWidth.to unWidth) <$> a
-  e1Height <- hold 0 $ (^.entity.entityHeight.to unHeight) <$> a
-
-  e2Position <-
-    switcher (pure $ V2 0 0) $ current . (^.entity.entityPosition) <$> b
-  e2Quadrants <-
-    switcher (pure []) $ current . (^.entity.entityQuadrants) <$> b
-  e2Width <- hold 0 $ (^.entity.entityWidth.to unWidth) <$> b
-  e2Height <- hold 0 $ (^.entity.entityHeight.to unHeight) <$> b
-
-  pure $
-    (\e1W e1H e2W e2H e1Qs e2Qs e1Left e1Top e2Left e2Top ->
-      let
-        e1Right = e1Left + e1W
-        e1Bottom = e1Top + e1H
-        e2Right = e2Left + e2W
-        e2Bottom = e2Top + e2H
-      in
-        any (`elem` e1Qs) e2Qs &&
-        not
-          (e1Right < e2Left ||
-            e1Top > e2Bottom ||
-            e1Left > e2Right ||
-            e1Bottom < e2Top)) <$>
-    e1Width <*>
-    e1Height <*>
-    e2Width <*>
-    e2Height <*>
-    e1Quadrants <*>
-    e2Quadrants <*>
-    ((^. _x) <$> e1Position) <*>
-    ((^. _y) <$> e1Position) <*>
-    ((^. _x) <$> e2Position) <*>
-    ((^. _y) <$> e2Position)
-
 intersects
   :: Reflex t
   => (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
@@ -220,9 +174,9 @@ intersects
       any (`elem` e1Qs) e2Qs &&
       not
         (e1Right < e2Left ||
-          e1Top > e2Bottom ||
-          e1Left > e2Right ||
-          e1Bottom < e2Top)) <$>
+         e1Top > e2Bottom ||
+         e1Left > e2Right ||
+         e1Bottom < e2Top)) <$>
   dE1Quadrants <*>
   dE2Quadrants <*>
   ((^. _x) <$> dE1Position) <*>

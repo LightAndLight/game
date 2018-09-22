@@ -78,3 +78,4 @@ instance GridManager t g m => GridManager t g (UniqueSupplyT t m) where
 
 instance RandomGen t m => RandomGen t (UniqueSupplyT t m) where
   randomInt = lift . randomInt
+  randomIntR = lift . randomIntR

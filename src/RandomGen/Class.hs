@@ -10,12 +10,16 @@ import Control.Monad.Writer (MonadWriter(..), WriterT)
 
 class (Reflex t, Monad m) => RandomGen t m | m -> t where
   randomInt :: Event t x -> m (Event t Int)
+  randomIntR :: Event t (Int, Int) -> m (Event t Int)
 
 instance RandomGen t m => RandomGen t (StateT s m) where
   randomInt = lift . randomInt
+  randomIntR = lift . randomIntR
 
 instance (RandomGen t m, Monoid w) => RandomGen t (WriterT w m) where
   randomInt = lift . randomInt
+  randomIntR = lift . randomIntR
 
 instance RandomGen t m => RandomGen t (ReaderT e m) where
   randomInt = lift . randomInt
+  randomIntR = lift . randomIntR

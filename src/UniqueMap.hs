@@ -13,7 +13,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Unique (Unique, unsafeMkUnique, unUnique)
 
 newtype UniqueMap a = UniqueMap { unUniqueMap :: IntMap.IntMap a }
-  deriving (Functor, Foldable, Semigroup, Show)
+  deriving (Functor, Foldable, Semigroup, Show, Monoid)
 
 insert :: Unique -> a -> UniqueMap a -> UniqueMap a
 insert u a = coerce $ IntMap.insert (unUnique u) a

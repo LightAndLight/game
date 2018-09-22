@@ -1,4 +1,5 @@
 {-# language FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
+{-# language GADTs #-}
 {-# language GeneralizedNewtypeDeriving #-}
 {-# language RecursiveDo #-}
 module RandomGen.Base where
@@ -8,16 +9,21 @@ import Control.Monad.Fix (MonadFix)
 import Control.Monad.State (MonadState(..), evalState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Functor.Const (Const(..))
-import System.Random (StdGen, next)
+import System.Random (StdGen, next, randomR)
 
 import RandomGen.Class
 
+data RandomRequest a b where
+  RandomInt :: RandomRequest () Int
+  RandomIntR :: (Int, Int) -> RandomRequest () Int
+
 instance (Reflex t, Monad m) => RandomGen t (RandomGenT t m) where
-  randomInt = RandomGenT . fmap (fmap getConst) . requesting . (Const () <$)
+  randomInt = RandomGenT . fmap (fmap getConst) . requesting . (RandomInt <$)
+  randomIntR = RandomGenT . fmap (fmap getConst) . requesting . (RandomIntR <$>)
 
 newtype RandomGenT t m a
   = RandomGenT
-  { unRandomGenT :: RequesterT t (Const ()) (Const Int) m a
+  { unRandomGenT :: RequesterT t (RandomRequest ()) (Const Int) m a
   } deriving
   ( Functor, Applicative, Monad, MonadFix
   , MonadSample t, MonadHold t, PostBuild t
@@ -61,8 +67,12 @@ runRandomGenT initialGen (RandomGenT m) = mdo
   let eResponse =
         flip evalState initialGen .
         traverseRequesterData
-          (\_ -> do
-              (n, s') <- gets next
+          (\x -> do
+              (n, s') <-
+                gets $
+                  case x of
+                    RandomInt -> next
+                    RandomIntR r -> randomR r
               put s'
               pure $ Const n) <$>
         eRequest

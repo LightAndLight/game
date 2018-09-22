@@ -12,7 +12,7 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Linear.V2 (V2(..))
 
 import Dimensions (Width(..), Height(..))
-import Grid (Grid(..), Quadrant)
+import Grid (Grid(..))
 import GridManager.Class (GridManager(..))
 import UniqueSupply.Class (UniqueSupply(..))
 import RandomGen.Class (RandomGen(..))
@@ -196,6 +196,7 @@ instance UniqueSupply t m => UniqueSupply t (GridManagerT t g m) where
 
 instance RandomGen t m => RandomGen t (GridManagerT t g m) where
   randomInt = lift . randomInt
+  randomIntR = lift . randomIntR
 
 instance MonadState s m => MonadState s (GridManagerT t g m) where
   get = lift get

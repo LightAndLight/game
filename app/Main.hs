@@ -13,10 +13,15 @@ import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter ((^.))
 import Control.Monad (replicateM, join)
 import Control.Monad.Fix (MonadFix)
-import Graphics.Gloss (Display(..), Picture, pictures, white)
+import Data.Foldable (foldMap)
+import Data.Map (Map)
+import Data.These (These)
+import Graphics.Gloss (Display(..), Picture, pictures, blank, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
+
+import qualified Data.Map as Map
 
 import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
@@ -24,16 +29,19 @@ import Entity
   (Entity, mkMovingEntity, mkStaticEntity, getMkEntity, entityQuadrants)
 import Entity.Box (mkBoxOpen, mkBoxPicture)
 import Entity.Player (mkPlayerPos)
+import Grid (Quadrant)
 import GridManager.Base (runGridManagerT)
 import GridManager.Class (GridManager)
-import Map (Map(..))
 import RandomGen.Base (runRandomGenT)
-import RandomGen.Class (RandomGen, randomInt)
+import RandomGen.Class (RandomGen, randomIntR)
 import Render.Entity (renderedEntity)
 import Render.Map (renderedMap)
+import Unique (Unique)
 import UniqueSupply.Base (runUniqueSupplyT)
 import UniqueSupply.Class (UniqueSupply(..))
 import Viewport (ScreenSize(..), mkViewport)
+
+import qualified Map as Game
 
 data Assets
   = Assets
@@ -42,6 +50,51 @@ data Assets
   , _assetsBoxClosedPicture :: Picture
   , _assetsBoxOpenPicture :: Picture
   }
+
+makeBox
+  :: ( Reflex t, MonadHold t m, MonadFix m
+     , UniqueSupply t m, GridManager t (Entity t) m
+     , Adjustable t m
+     )
+  => Game.Map
+  -> Event t a
+  -> (Picture, Picture)
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> (Dynamic t [Quadrant], Dynamic t (V2 Float), Width Float, Height Float)
+  -> Event t (V2 Float)
+  -> m (Dynamic t Picture, Dynamic t (V2 Float), Width Float, Height Float)
+makeBox mp eCreate (openPic, closedPic) bWidth bHeight bPos playerIntersect ePlayerInteract = mdo
+  -- Make a box
+  let
+    dBoxPos = pure bPos
+
+  eMkBoxEntity <-
+    getMkEntity
+      eCreate
+      mp
+      closedPic
+      bWidth
+      bHeight
+      bPos
+
+  dBoxOpen <-
+    mkBoxOpen
+      playerIntersect
+      (dBoxQuadrants, dBoxPos, bWidth, bHeight)
+      ePlayerInteract
+
+  let dBoxPicture = mkBoxPicture (openPic, closedPic) dBoxOpen
+
+  (_, eBoxEntity) <-
+    runWithReplace
+      (pure ())
+      ((\mkE -> mkStaticEntity mkE dBoxPicture) <$> eMkBoxEntity)
+
+  dBoxQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> eBoxEntity)
+
+  pure (dBoxPicture, dBoxPos, bWidth, bHeight)
 
 game
   :: forall t m
@@ -58,7 +111,7 @@ game screenSize Assets{..} refresh input = mdo
   controls <- mkControls refresh input
 
   let
-    mp = Map _assetsMapPicture (Width 1000) (Height 1000)
+    mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
 
   ePostBuild <- getPostBuild
 
@@ -90,64 +143,51 @@ game screenSize Assets{..} refresh input = mdo
 
   dPlayerQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> ePlayerEntity)
 
-
-
-  -- Make a box
-  let
-    bWidth = Width 10
-    bHeight = Height 10
-    bPos = V2 40 40
-    dBoxPos = pure bPos
-
-  eMkBoxEntity <-
-    getMkEntity
-      ePlayerEntity
+  (dBoxPicture, dBoxPos, bWidth, bHeight) <-
+    makeBox
       mp
-      _assetsBoxClosedPicture
-      bWidth
-      bHeight
-      bPos
-
-  dBoxOpen <-
-    mkBoxOpen
-      (dPlayerQuadrants, dPlayerPos, bWidth, bHeight)
-      (dBoxQuadrants, dBoxPos, pWidth, pHeight)
+      ePlayerEntity
+      (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+      (Width 10)
+      (Height 10)
+      (V2 40 40)
+      (dPlayerQuadrants, dPlayerPos, pWidth, pHeight)
       ePlayerInteract
 
-  let dBoxPicture = mkBoxPicture (_assetsBoxClosedPicture, _assetsBoxOpenPicture) dBoxOpen
+  eRandomInt1 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ ePlayerEntity)
+  eRandomInt2 <- fmap fromIntegral <$> randomIntR ((0, 1000) <$ ePlayerEntity)
+  eRandomPos <- switchHoldPromptly never ((\w -> (,) w <$> eRandomInt2) <$> eRandomInt1)
 
-  (_, eBoxEntity) <-
-    runWithReplace
-      (pure ())
-      ((\mkE -> mkStaticEntity mkE dBoxPicture) <$> eMkBoxEntity)
+  let eInsert = Map.singleton 0 . Just <$> eRandomPos
 
-  dBoxQuadrants <- join <$> holdDyn (pure []) ((^.entityQuadrants) <$> eBoxEntity)
-
-
-
-  eRandomInts <- replicateM 5 $ randomInt ePlayerEntity
-
-{-
-  boxesCoords <-
-    replicateM 5 $
-    (,) <$>
-    genRandomR 0 (_mapWidth mp - 10) <*>
-    genRandomR 0 (_mapHeight mp - 10)
-
-  boxes <-
-    for boxesCoords $
-    \(x, y) ->
-      mkBox mp player (_assetsBoxClosedPicture, _assetsBoxOpenPicture) x y 10 10
-  -}
+  dBoxes <-
+    listHoldWithKey
+      (mempty :: Map Int (Float, Float))
+      eInsert
+      (\_ (x, y) ->
+          makeBox
+            mp
+            eInsert
+            (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+            (Width 10)
+            (Height 10)
+            (V2 x y)
+            (dPlayerQuadrants, dPlayerPos, pWidth, pHeight)
+            ePlayerInteract)
 
   viewport <- mkViewport 100 screenSize mp controls (pWidth, pHeight, dPlayerPos)
 
-  pure . fmap pictures . sequence $
-    [ renderedMap viewport mp
-    , renderedEntity viewport (pWidth, pHeight, dPlayerPos) dPlayerPicture
-    , renderedEntity viewport (bWidth, bHeight, dBoxPos) dBoxPicture
-    ]
-    -- <> fmap (renderedEntity viewport) boxes
+  let
+    scene =
+      fmap pictures . sequence $
+      [ renderedMap viewport mp
+      , renderedEntity viewport (pWidth, pHeight, dPlayerPos) dPlayerPicture
+      , renderedEntity viewport (bWidth, bHeight, dBoxPos) dBoxPicture
+      , dBoxes >>=
+        foldMap
+          (\(dPic, dPos, w, h) -> renderedEntity viewport (w, h, dPos) dPic)
+      ]
+  join <$> holdDyn (pure blank) (scene <$ ePostBuild)
 
 main :: IO ()
 main = do
