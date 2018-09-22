@@ -13,7 +13,7 @@ import Reflex.Gloss (InputEvent, playReflex)
 import Reflex.Workflow (Workflow(..), workflow)
 
 import Control.Concurrent.Supply (newSupply)
-import Control.Lens.Getter ((^.))
+import Control.Lens.Getter (view)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
@@ -72,6 +72,36 @@ switchHoldUnique eCreate f =
   requestUnique eCreate >>=
   switchHoldPromptly never . fmap f
 
+mkUniqueAndPos
+  :: ( MonadHold t m
+     , UniqueSupply t m, RandomGen t m
+     )
+  => Event t a
+  -> m (Event t (Map Unique (Maybe (V2 Float))))
+mkUniqueAndPos eCreate = do
+  eRandomPos <- randomPosition eCreate (0, 990) (0, 990)
+  switchHoldUnique eCreate (\u -> Map.singleton u . Just <$> eRandomPos)
+
+mkUniqueAndPosNotOnPlayer
+  :: ( Reflex t, MonadHold t m, MonadFix m
+     , UniqueSupply t m, RandomGen t m
+     , Adjustable t m
+     )
+  => Dynamic t (V2 Float)
+  -> Event t a
+  -> m (Event t (Map Unique (Maybe (V2 Float))))
+mkUniqueAndPosNotOnPlayer dPlayerPos eCreate = switchDyn <$> workflow w
+  where
+    w = Workflow $ do
+      eRandomPos <- mkUniqueAndPos eCreate
+      let
+        eRetry =
+          ffilter id
+          ((\a -> any $ maybe False (a ==)) <$>
+            current dPlayerPos <@>
+            eRandomPos)
+      pure (eRandomPos, w <$ eRetry)
+
 game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
@@ -112,37 +142,14 @@ game screenSize Assets{..} refresh input = mdo
       (V2 40 40)
       player
 
-  let
-    mkUniqueAndPos :: Event t a -> m (Event t (Map Unique (Maybe (V2 Float))))
-    mkUniqueAndPos eCreate = do
-      eRandomPos <- randomPosition eCreate (0, 990) (0, 990)
-      switchHoldUnique eCreate (\u -> Map.singleton u . Just <$> eRandomPos)
-
-    mkUniqueAndPosNotOnPlayer
-      :: Event t a
-      -> m (Event t (Map Unique (Maybe (V2 Float))))
-    mkUniqueAndPosNotOnPlayer eCreate =
-      fmap switchDyn . workflow $
-        let
-          w = Workflow $ do
-            eRandomPos <- mkUniqueAndPos eCreate
-            let
-              eRetry =
-                ffilter id
-                ((\a -> any $ maybe False (a ==)) <$>
-                 current _playerPosition <@>
-                 eRandomPos)
-            pure (eRandomPos, w <$ eRetry)
-        in
-          w
-
-  -- eInitial <- mkUniqueAndPos _boxOpenedFirstTime
-  eInitial <- mkUniqueAndPosNotOnPlayer _boxOpenedFirstTime
-  eLater <- networkView $
-    fmap fold .
-    -- traverse (mkUniqueAndPos . (^.boxOpenedFirstTime)) <$>
-    traverse (mkUniqueAndPosNotOnPlayer . (^.boxOpenedFirstTime)) <$>
-    dBoxes
+  eInitial <- mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
+  eLater <-
+    networkView $
+      fmap fold .
+      traverse
+        (mkUniqueAndPosNotOnPlayer _playerPosition .
+        view boxOpenedFirstTime) <$>
+      dBoxes
   eInsert <- switchHold never eLater
 
   dBoxes :: Dynamic t (Map Unique (Box t)) <-
