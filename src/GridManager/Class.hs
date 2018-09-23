@@ -1,8 +1,10 @@
 {-# language FlexibleInstances, FunctionalDependencies, MultiParamTypeClasses #-}
+{-# language ScopedTypeVariables #-}
 {-# language UndecidableInstances #-}
 module GridManager.Class where
 
 import Reflex
+import Control.Lens.Setter (over, mapped)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (StateT)
@@ -18,10 +20,7 @@ import Unique (Unique)
 
 class (Reflex t, Monad m) => GridManager t g m | m -> t g where
   getGrid :: m (Grid t g)
-  registerEntity
-    :: Unique
-    -> g
-    -> m ()
+  registerEntity :: Unique -> g -> m ()
 
 instance GridManager t g m => GridManager t g (StateT s m) where
   getGrid = lift getGrid
@@ -36,19 +35,21 @@ instance (Monoid w, GridManager t g m) => GridManager t g (WriterT w m) where
   registerEntity a b = lift $ registerEntity a b
 
 getQuadrants
-  :: (MonadHold t m, MonadFix m, GridManager t g m)
+  :: forall t g m
+   . (MonadHold t m, MonadFix m, GridManager t g m)
   => Unique
   -> m (Dynamic t [Quadrant])
 getQuadrants u = do
   grid <- getGrid
 
   let
+    rows :: Dynamic t [[Bool]]
     rows =
-      distributeListOverDynPure $
-      distributeListOverDynPure .
-      fmap (fmap (Map.member u) . cellContents) .
-      unRow <$>
-      unRows (_gridRows grid)
+      let
+        g = fmap unRow . unRows . _gridRows $ grid
+        g' = over (mapped.mapped) (fmap (Map.member u) . cellContents) g
+      in
+        distributeListOverDynPure $ distributeListOverDynPure <$> g'
 
   pure $
     fmap

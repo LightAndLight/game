@@ -22,6 +22,8 @@ import RandomGen.Class (RandomGen(..))
 import Unique (Unique)
 import UniqueSupply.Class (UniqueSupply(..))
 
+import qualified Map as Game
+
 newtype GridManagerT t g m a
   = GridManagerT
   { unGridManagerT
@@ -62,16 +64,19 @@ runGridManagerT
      )
   => Int -- ^ Number of rows
   -> Int -- ^ Number of columns
-  -> Width Float
-  -> Height Float
+  -> Game.Map
   -> GridManagerT t g m a
   -> m a
-runGridManagerT rows cols w h (GridManagerT m) = mdo
+runGridManagerT rows cols mp (GridManagerT m) = mdo
   let
     grid :: Grid t g
-    grid = makeGrid rows cols w h dItems
+    grid =
+      makeGrid
+        rows cols
+        (Game._mapWidth mp) (Game._mapHeight mp)
+        dItems
 
-  (a, dItems) <- runDynamicWriterT (runReaderT m grid)
+  (a, dItems) <- runDynamicWriterT $ runReaderT m grid
 
   pure a
 

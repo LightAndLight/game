@@ -29,9 +29,8 @@ import qualified Data.Map as Map
 import Box (Box(..), mkBox, mkBox', boxOpenedFirstTime)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
-import Entity (Entity, toEntity)
+import Entity (toEntity)
 import GridManager.Base (runGridManagerT)
-import GridManager.Class (GridManager)
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen, randomIntR)
@@ -106,7 +105,7 @@ game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
      , PostBuild t m, Adjustable t m
-     , GridManager t (Entity t) m, UniqueSupply t m, RandomGen t m
+     , UniqueSupply t m, RandomGen t m
      , NotReady t m
      )
   => ScreenSize Float
@@ -114,69 +113,71 @@ game
   -> Event t Float
   -> Event t InputEvent
   -> m (Dynamic t Picture)
-game screenSize Assets{..} refresh input = mdo
-  controls <- mkControls refresh input
-
+game screenSize Assets{..} refresh input =
   let
     mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
+  in
+    runGridManagerT 2 2 mp $ mdo
+      controls <- mkControls refresh input
 
-  ePostBuild <- getPostBuild
 
-  player@Player{..} <-
-    mkPlayer
-      mp
-      controls
-      ePostBuild
-      _assetsPlayerPicture
-      (Width 20)
-      (Height 20)
-      (V2 0 0)
+      ePostBuild <- getPostBuild
 
-  box@Box{..} <-
-    mkBox
-      mp
-      ePostBuild
-      (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-      (Width 10)
-      (Height 10)
-      (V2 40 40)
-      player
+      player@Player{..} <-
+        mkPlayer
+          mp
+          controls
+          ePostBuild
+          _assetsPlayerPicture
+          (Width 20)
+          (Height 20)
+          (V2 0 0)
 
-  eInitial <- mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
-  eLater <-
-    networkView $
-      fmap fold .
-      traverse
-        (mkUniqueAndPosNotOnPlayer _playerPosition .
-        view boxOpenedFirstTime) <$>
-      dBoxes
-  eInsert <- switchHold never eLater
+      box@Box{..} <-
+        mkBox
+          mp
+          ePostBuild
+          (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+          (Width 10)
+          (Height 10)
+          (V2 40 40)
+          player
 
-  dBoxes :: Dynamic t (Map Unique (Box t)) <-
-    listHoldWithKey
-      mempty
-      (eInitial <> eInsert)
-      (\u pos ->
-          mkBox'
-            mp
-            u
-            (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-            (Width 10)
-            (Height 10)
-            pos
-            player)
+      eInitial <- mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
+      eLater <-
+        networkView $
+          fmap fold .
+          traverse
+            (mkUniqueAndPosNotOnPlayer _playerPosition .
+            view boxOpenedFirstTime) <$>
+          dBoxes
+      eInsert <- switchHold never eLater
 
-  viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
+      dBoxes :: Dynamic t (Map Unique (Box t)) <-
+        listHoldWithKey
+          mempty
+          (eInitial <> eInsert)
+          (\u pos ->
+              mkBox'
+                mp
+                u
+                (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+                (Width 10)
+                (Height 10)
+                pos
+                player)
 
-  let
-    scene =
-      fmap pictures . sequence $
-      [ renderedMap viewport mp
-      , renderedEntity viewport $ toEntity player
-      , renderedEntity viewport $ toEntity box
-      , dBoxes >>= foldMap (renderedEntity viewport . toEntity)
-      ]
-  join <$> holdDyn (pure blank) (scene <$ ePostBuild)
+      viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
+
+      let
+        scene =
+          fmap pictures . sequence $
+          [ renderedMap viewport mp
+          , renderedEntity viewport $ toEntity player
+          , renderedEntity viewport $ toEntity box
+          , dBoxes >>= foldMap (renderedEntity viewport . toEntity)
+          ]
+      join <$> holdDyn (pure blank) (scene <$ ePostBuild)
 
 main :: IO ()
 main = do
@@ -211,5 +212,4 @@ main = do
     (\er ei ->
        runRandomGenT stg $
        runUniqueSupplyT sup $
-       runGridManagerT 2 2 (Width 1000) (Height 1000) $
        game (fromIntegral <$> screenSize) Assets{..} er ei)
