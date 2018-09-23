@@ -40,7 +40,7 @@ import Render.Map (renderedMap)
 import Unique (Unique)
 import UniqueSupply.Base (runUniqueSupplyT)
 import UniqueSupply.Class (UniqueSupply(..))
-import Viewport (ScreenSize(..), mkViewport)
+import Viewport (ScreenSize(..), mkViewport, ViewportConfig(..))
 
 import qualified Map as Game
 
@@ -166,7 +166,7 @@ game screenSize Assets{..} refresh input = mdo
             pos
             player)
 
-  viewport <- mkViewport 100 screenSize mp controls player
+  viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
 
   let
     scene =
