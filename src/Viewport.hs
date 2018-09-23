@@ -1,3 +1,4 @@
+{-# language DeriveFunctor #-}
 {-# language LambdaCase #-}
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
@@ -14,10 +15,8 @@ import Dimensions (Width(..), Height(..))
 import Entity (Entity(..))
 import Map (Map(..))
 
-newtype ScreenSize a = ScreenSize { unScreenSize :: (a, a) }
-
-instance Functor ScreenSize where
-  fmap f (ScreenSize (a, b)) = ScreenSize (f a, f b)
+data ScreenSize a = ScreenSize a a
+  deriving Functor
 
 data Viewport t
   = Viewport
@@ -42,7 +41,7 @@ edgePanEvents
   -> Float -- ^ Edge-scrolling threshold
   -> Entity t
   -> (Event t (Endo Float), Event t (Endo Float))
-edgePanEvents (ScreenSize (vpW, vpH)) dist Entity{..} = (eX, eY)
+edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
   where
     eX =
       (\epos ->
@@ -86,7 +85,7 @@ mkViewport
   -> Map -- ^ The map it is viewing
   -> [ViewportConfig t]
   -> m (Viewport t)
-mkViewport ss@(ScreenSize (vpW, vpH)) Map{..} cfgs = do
+mkViewport ss@(ScreenSize vpW vpH) Map{..} cfgs = do
   let
     _vpWidth = Width vpW
     _vpHeight = Height vpH

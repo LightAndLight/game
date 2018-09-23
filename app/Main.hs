@@ -196,13 +196,16 @@ main = do
     maybe (error "couldn't load box_open") pure =<<
     loadJuicyPNG "assets/box_open.png"
 
-  let screenSize = ScreenSize (600, 400)
+  let
+    screenWidth = 600
+    screenHeight = 400
+    screenSize = ScreenSize screenWidth screenHeight
 
   stg <- getStdGen
   sup <- newSupply
 
   playReflex
-    (InWindow "game" (unScreenSize screenSize) (0, 0))
+    (InWindow "game" (screenWidth, screenHeight) (0, 0))
     white
     30
     (\er ei ->
