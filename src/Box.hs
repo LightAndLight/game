@@ -15,11 +15,11 @@ import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
   ( Entity, ToEntity(..), HasQuadrants(..)
   , HasPicture(..)
-  , intersects
+  , mkEntity, mkEntityPos, intersects
   )
 import Graphics.Gloss (Picture)
 import Grid.Quadrant (Quadrant)
-import GridManager.Class (GridManager, registerEntity, getQuadrants)
+import GridManager.Class (GridManager)
 import Map (Map)
 import Player (Player(..))
 import Position (HasPosition(..))
@@ -71,6 +71,13 @@ mkBoxPicture
 mkBoxPicture (open, closed) dBoxOpen =
   (\b -> if b then open else closed) <$> dBoxOpen
 
+mkBoxOpenedFirstTime
+  :: (Reflex t, MonadHold t m)
+  => Dynamic t Bool
+  -> m (Event t ())
+mkBoxOpenedFirstTime dOpen =
+  switchHold (() <$ updated dOpen) (never <$ updated dOpen)
+
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
@@ -85,23 +92,20 @@ mkBox
   -> Player t
   -> m (Box t)
 mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
-  let _boxPosition = pure bPos
+  _boxPosition <- mkEntityPos mp _boxWidth _boxHeight bPos never never
 
   eUnique <- requestUnique eCreate
 
   rec
     _boxOpen <- mkBoxOpen player box
-
-    _boxOpenedFirstTime <-
-      switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
+    _boxOpenedFirstTime <- mkBoxOpenedFirstTime _boxOpen
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
     (_, edQuadrants) <-
       runWithReplace
         (pure ())
-        ((\u -> registerEntity u (toEntity box) *> getQuadrants u) <$>
-        eUnique)
+        ((\u -> mkEntity u box) <$> eUnique)
 
     _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
 
@@ -123,18 +127,15 @@ mkBox'
   -> Player t
   -> m (Box t)
 mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = do
-  let _boxPosition = pure bPos
+  _boxPosition <- mkEntityPos mp _boxWidth _boxHeight bPos never never
 
   rec
     _boxOpen <- mkBoxOpen player box
+    _boxOpenedFirstTime <- mkBoxOpenedFirstTime _boxOpen
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    registerEntity u $ toEntity box
-    _boxQuadrants <- getQuadrants u
-
-    _boxOpenedFirstTime <-
-      switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
+    _boxQuadrants <- mkEntity u box
 
     let box = Box{..}
 

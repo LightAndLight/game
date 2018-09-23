@@ -17,8 +17,10 @@ import Linear.V2 (V2(..), R1(..), R2(..))
 
 import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
 import Grid.Quadrant (Quadrant)
+import GridManager.Class (GridManager, registerEntity, getQuadrants)
 import Map (Map(..))
 import Position (HasPosition(..))
+import Unique (Unique)
 
 data Entity t
   = Entity
@@ -81,6 +83,17 @@ mkEntityPos Map{..} w h pos eX eY = do
       (max 0 . min (unHeight _mapHeight - unHeight h) <$> eY)
 
   pure $ V2 <$> dX <*> dY
+
+mkEntity
+  :: ( MonadHold t m, MonadFix m
+     , ToEntity t e, GridManager t (Entity t) m
+     )
+  => Unique
+  -> e
+  -> m (Dynamic t [Quadrant])
+mkEntity u e = do
+  registerEntity u $ toEntity e
+  getQuadrants u
 
 intersects
   :: Reflex t

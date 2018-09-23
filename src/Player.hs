@@ -17,9 +17,11 @@ import Linear.V2 (V2, _x, _y)
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
-  (Entity, ToEntity(..), HasQuadrants(..), HasPicture(..), mkEntityPos)
+  ( Entity, ToEntity(..), HasQuadrants(..), HasPicture(..)
+  , mkEntity, mkEntityPos
+  )
 import Grid.Quadrant (Quadrant)
-import GridManager.Class (GridManager, registerEntity, getQuadrants)
+import GridManager.Class (GridManager)
 import Map (Map)
 import Position (HasPosition(..))
 import UniqueSupply.Class (UniqueSupply, requestUnique)
@@ -81,7 +83,6 @@ mkPlayer
   -> V2 Float
   -> m (Player t)
 mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
-  -- Make a player
   _playerPosition <- mkPlayerPos mp controls _playerWidth _playerHeight pPos
   let
     _playerPicture = pure pic
@@ -93,8 +94,7 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
     (_, edPlayerQuadrants) <-
       runWithReplace
       (pure ())
-      ((\u -> registerEntity u (toEntity player) *> getQuadrants u) <$>
-       eUnique)
+      ((\u -> mkEntity u player) <$> eUnique)
 
     _playerQuadrants <- join <$> holdDyn (pure []) edPlayerQuadrants
 
