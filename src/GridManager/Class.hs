@@ -8,35 +8,32 @@ import Control.Monad.Reader (ReaderT)
 import Control.Monad.State (StateT)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Writer (WriterT)
-import Data.Semigroup ((<>))
-import Linear.V2 (V2)
+import Data.List (findIndices)
 
-import Dimensions (Width, Height)
-import Grid (Grid(..), Quadrant(..))
+import qualified Data.Map as Map
+
+import Grid (Grid(..), Rows(..), Row(..), Cell(..))
+import Grid.Quadrant (Quadrant(..))
 import Unique (Unique)
-
-import qualified UniqueMap
 
 class (Reflex t, Monad m) => GridManager t g m | m -> t g where
   getGrid :: m (Grid t g)
   registerEntity
     :: Unique
     -> g
-    -> (Width Float, Height Float)
-    -> Dynamic t (V2 Float)
     -> m ()
 
 instance GridManager t g m => GridManager t g (StateT s m) where
   getGrid = lift getGrid
-  registerEntity a b c d = lift $ registerEntity a b c d
+  registerEntity a b = lift $ registerEntity a b
 
 instance GridManager t g m => GridManager t g (ReaderT r m) where
   getGrid = lift getGrid
-  registerEntity a b c d = lift $ registerEntity a b c d
+  registerEntity a b = lift $ registerEntity a b
 
 instance (Monoid w, GridManager t g m) => GridManager t g (WriterT w m) where
   getGrid = lift getGrid
-  registerEntity a b c d = lift $ registerEntity a b c d
+  registerEntity a b = lift $ registerEntity a b
 
 getQuadrants
   :: (MonadHold t m, MonadFix m, GridManager t g m)
@@ -45,30 +42,18 @@ getQuadrants
 getQuadrants u = do
   grid <- getGrid
 
-  dTl <-
-    holdUniqDyn $
-    isQuadrant TL u <$> _gridTopLeft grid
-
-  dTr <-
-    holdUniqDyn $
-    isQuadrant TR u <$> _gridTopRight grid
-
-  dBl <-
-    holdUniqDyn $
-    isQuadrant BL u <$> _gridBottomLeft grid
-
-  dBr <-
-    holdUniqDyn $
-    isQuadrant BR u <$> _gridBottomRight grid
+  let
+    rows =
+      distributeListOverDynPure $
+      distributeListOverDynPure .
+      fmap (fmap (Map.member u) . cellContents) .
+      unRow <$>
+      unRows (_gridRows grid)
 
   pure $
-    (\a b c d -> a <> b <> c <> d) <$>
-    dTl <*>
-    dTr <*>
-    dBl <*>
-    dBr
-  where
-    isQuadrant q un m =
-      if UniqueMap.member un m
-      then [q]
-      else []
+    fmap
+      (\rs -> do
+          (y, row) <- zip [0::Int ..] rs
+          x <- findIndices id row
+          pure $ Quadrant (x, y))
+      rows

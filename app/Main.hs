@@ -29,7 +29,7 @@ import qualified Data.Map as Map
 import Box (Box(..), mkBox, mkBox', boxOpenedFirstTime)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
-import Entity (toEntity)
+import Entity (Entity, toEntity)
 import GridManager.Base (runGridManagerT)
 import GridManager.Class (GridManager)
 import Player (Player(..), mkPlayer)
@@ -106,7 +106,7 @@ game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
      , PostBuild t m, Adjustable t m
-     , GridManager t () m, UniqueSupply t m, RandomGen t m
+     , GridManager t (Entity t) m, UniqueSupply t m, RandomGen t m
      , NotReady t m
      )
   => ScreenSize Float
@@ -208,5 +208,5 @@ main = do
     (\er ei ->
        runRandomGenT stg $
        runUniqueSupplyT sup $
-       runGridManagerT (Width 1000) (Height 1000) $
+       runGridManagerT 2 2 (Width 1000) (Height 1000) $
        game (fromIntegral <$> screenSize) Assets{..} er ei)

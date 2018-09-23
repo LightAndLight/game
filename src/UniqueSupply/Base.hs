@@ -77,7 +77,7 @@ runUniqueSupplyT initialSupply (UniqueSupplyT m) = mdo
 
 instance GridManager t g m => GridManager t g (UniqueSupplyT t m) where
   getGrid = lift getGrid
-  registerEntity a b c d = lift $ registerEntity a b c d
+  registerEntity a b = lift $ registerEntity a b
 
 instance RandomGen t m => RandomGen t (UniqueSupplyT t m) where
   randomInt = lift . randomInt

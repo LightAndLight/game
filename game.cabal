@@ -40,12 +40,14 @@ library
                        , Dimensions
                        , Entity
                        , Grid
+                       , Grid.Quadrant
                        , GridManager.Base
                        , GridManager.Class
                        , Map
                        , Viewport
                        , Controls
                        , Player
+                       , Position
                        , RandomGen.Base
                        , RandomGen.Class
                        , Render.Entity

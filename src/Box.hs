@@ -11,17 +11,18 @@ import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Linear.V2 (V2)
 
-import Dimensions (Width, Height)
+import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
-  ( ToEntity(..), HasQuadrants(..), HasPosition(..), HasPicture(..)
-  , HasWidth(..), HasHeight(..)
-  , mkStaticEntity, intersects
+  ( Entity, ToEntity(..), HasQuadrants(..)
+  , HasPicture(..)
+  , intersects
   )
 import Graphics.Gloss (Picture)
-import Grid (Quadrant)
-import GridManager.Class (GridManager)
+import Grid.Quadrant (Quadrant)
+import GridManager.Class (GridManager, registerEntity, getQuadrants)
 import Map (Map)
 import Player (Player(..))
+import Position (HasPosition(..))
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 import Unique (Unique)
 
@@ -72,7 +73,7 @@ mkBoxPicture (open, closed) dBoxOpen =
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t () m
+     , UniqueSupply t m, GridManager t (Entity t) m
      , Adjustable t m
      )
   => Map
@@ -83,33 +84,34 @@ mkBox
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
+mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
   let _boxPosition = pure bPos
 
   eUnique <- requestUnique eCreate
 
-  _boxOpen <- mkBoxOpen player box
+  rec
+    _boxOpen <- mkBoxOpen player box
 
-  _boxOpenedFirstTime <-
-    switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
+    _boxOpenedFirstTime <-
+      switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
 
-  let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
+    let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-  (_, edQuadrants) <-
-    runWithReplace
-      (pure ())
-      ((\u -> mkStaticEntity mp u _boxWidth _boxHeight bPos) <$>
-       eUnique)
+    (_, edQuadrants) <-
+      runWithReplace
+        (pure ())
+        ((\u -> registerEntity u (toEntity box) *> getQuadrants u) <$>
+        eUnique)
 
-  _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
+    _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
 
-  let box = Box{..}
+    let box = Box{..}
 
   pure box
 
 mkBox'
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t () m
+     , GridManager t (Entity t) m
      , Adjustable t m
      )
   => Map
@@ -120,19 +122,21 @@ mkBox'
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = mdo
+mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = do
   let _boxPosition = pure bPos
 
-  _boxOpen <- mkBoxOpen player box
+  rec
+    _boxOpen <- mkBoxOpen player box
 
-  let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
+    let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-  _boxQuadrants <- mkStaticEntity mp u _boxWidth _boxHeight bPos
+    registerEntity u $ toEntity box
+    _boxQuadrants <- getQuadrants u
 
-  _boxOpenedFirstTime <-
-    switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
+    _boxOpenedFirstTime <-
+      switchHold (() <$ updated _boxOpen) (never <$ updated _boxOpen)
 
-  let box = Box{..}
+    let box = Box{..}
 
   pure box
 

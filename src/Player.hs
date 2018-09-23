@@ -15,15 +15,13 @@ import Graphics.Gloss (Picture)
 import Linear.V2 (V2, _x, _y)
 
 import Controls (Controls(..))
-import Dimensions (Width, Height)
+import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
-  ( ToEntity(..), HasQuadrants(..), HasPosition(..), HasPicture(..)
-  , HasWidth(..), HasHeight(..)
-  , mkMovingEntity, mkEntityPos
-  )
-import Grid (Quadrant)
-import GridManager.Class (GridManager)
+  (Entity, ToEntity(..), HasQuadrants(..), HasPicture(..), mkEntityPos)
+import Grid.Quadrant (Quadrant)
+import GridManager.Class (GridManager, registerEntity, getQuadrants)
 import Map (Map)
+import Position (HasPosition(..))
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 
 data Player t
@@ -71,7 +69,7 @@ mkPlayerPos mp Controls{..} w h pos = mdo
 
 mkPlayer
   :: ( MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t () m
+     , UniqueSupply t m, GridManager t (Entity t) m
      , Adjustable t m
      )
   => Map
@@ -91,17 +89,15 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
 
   eUnique <- requestUnique eCreate
 
-  (_, edQuadrants) <-
-    runWithReplace
+  rec
+    (_, edPlayerQuadrants) <-
+      runWithReplace
       (pure ())
-      ((\u ->
-          mkMovingEntity
-            u
-            _playerWidth
-            _playerHeight
-            _playerPosition) <$>
+      ((\u -> registerEntity u (toEntity player) *> getQuadrants u) <$>
        eUnique)
 
-  _playerQuadrants <- join <$> holdDyn (pure []) edQuadrants
+    _playerQuadrants <- join <$> holdDyn (pure []) edPlayerQuadrants
 
-  pure Player{..}
+    let player = Player{..}
+
+  pure player
