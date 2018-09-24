@@ -19,6 +19,7 @@ import Grid (Grid(..), makeGrid)
 import GridManager.Class (GridManager(..))
 import Position (HasPosition)
 import RandomGen.Class (RandomGen(..))
+import SceneManager.Class (SceneManager(..))
 import Unique (Unique)
 import UniqueSupply.Class (UniqueSupply(..))
 
@@ -101,6 +102,10 @@ instance MonadState s m => MonadState s (GridManagerT t g m) where
 instance NotReady t m => NotReady t (GridManagerT t g m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
+
+instance SceneManager t m => SceneManager t (GridManagerT t g m) where
+  getScene = lift getScene
+  addToScene = lift . addToScene
 
 registerEntityImpl
   :: (Reflex t, Monad m)

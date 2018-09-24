@@ -13,6 +13,7 @@ import Data.Functor.Const (Const(..))
 import System.Random (StdGen, next, randomR)
 
 import RandomGen.Class
+import SceneManager.Class (SceneManager(..))
 
 data RandomRequest a b where
   RandomInt :: RandomRequest () Int
@@ -29,6 +30,31 @@ newtype RandomGenT t m a
   ( Functor, Applicative, Monad, MonadFix
   , MonadSample t, MonadHold t, PostBuild t
   )
+
+runRandomGenT
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => StdGen
+  -> RandomGenT t m a
+  -> m a
+runRandomGenT initialGen (RandomGenT m) = mdo
+  bGen <- hold initialGen $ snd <$> eResponse
+  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
+  let
+    eResponse =
+      (\g ->
+          flip runState g .
+          traverseRequesterData
+          (\x -> do
+              (n, s') <-
+                gets $
+                case x of
+                  RandomInt -> next
+                  RandomIntR r -> randomR r
+              put s'
+              pure $ Const n)) <$>
+      bGen <@>
+      eRequest
+  pure a
 
 instance MonadTrans (RandomGenT t) where
   lift = RandomGenT . lift
@@ -62,27 +88,6 @@ instance (Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (RandomGenT
       b
       c
 
-runRandomGenT
-  :: (Reflex t, MonadHold t m, MonadFix m)
-  => StdGen
-  -> RandomGenT t m a
-  -> m a
-runRandomGenT initialGen (RandomGenT m) = mdo
-  bGen <- hold initialGen $ snd <$> eResponse
-  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
-  let
-    eResponse =
-      (\g ->
-          flip runState g .
-          traverseRequesterData
-          (\x -> do
-              (n, s') <-
-                gets $
-                case x of
-                  RandomInt -> next
-                  RandomIntR r -> randomR r
-              put s'
-              pure $ Const n)) <$>
-      bGen <@>
-      eRequest
-  pure a
+instance SceneManager t m => SceneManager t (RandomGenT t m) where
+  getScene = lift getScene
+  addToScene = lift . addToScene

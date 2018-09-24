@@ -51,6 +51,8 @@ library
                        , RandomGen.Class
                        , Render.Entity
                        , Render.Map
+                       , SceneManager.Base
+                       , SceneManager.Class
                        , UniqueSupply.Base
                        , UniqueSupply.Class
   build-depends:       base <5

@@ -13,6 +13,7 @@ import Data.Functor.Const (Const(..))
 
 import GridManager.Class (GridManager(..))
 import RandomGen.Class (RandomGen(..))
+import SceneManager.Class (SceneManager(..))
 import Unique
 import UniqueSupply.Class
 
@@ -86,3 +87,7 @@ instance RandomGen t m => RandomGen t (UniqueSupplyT t m) where
 instance NotReady t m => NotReady t (UniqueSupplyT t m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
+
+instance SceneManager t m => SceneManager t (UniqueSupplyT t m) where
+  getScene = lift getScene
+  addToScene = lift . addToScene

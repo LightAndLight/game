@@ -11,6 +11,8 @@ import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Linear.V2 (V2)
 
+import qualified Data.Map as Map
+
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
   ( Entity, ToEntity(..), HasQuadrants(..)
@@ -23,6 +25,7 @@ import GridManager.Class (GridManager)
 import Map (Map)
 import Player (Player(..))
 import Position (HasPosition(..))
+import SceneManager.Class (SceneManager, addToScene)
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 import Unique (Unique)
 
@@ -81,6 +84,7 @@ mkBoxOpenedFirstTime dOpen =
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
+     , SceneManager t m
      , Adjustable t m
      )
   => Map
@@ -105,28 +109,32 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
     (_, edQuadrants) <-
       runWithReplace
         (pure ())
-        ((\u -> mkEntity u box) <$> eUnique)
+        ((\u -> do
+             mkEntity u box) <$>
+          eUnique)
 
     _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
 
     let box = Box{..}
 
+  addToScene $ (\u -> Map.singleton u . Just $ toEntity box) <$> eUnique
   pure box
 
 mkBox'
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m
+     , GridManager t (Entity t) m, SceneManager t m
      , Adjustable t m
      )
   => Map
   -> Unique
+  -> Event t a
   -> (Picture, Picture)
   -> Width Float
   -> Height Float
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = do
+mkBox' mp u eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
   _boxPosition <- mkEntityPos mp _boxWidth _boxHeight bPos never never
 
   rec
@@ -139,5 +147,6 @@ mkBox' mp u (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
     let box = Box{..}
 
+  addToScene $ (Map.singleton u . Just $ toEntity box) <$ eCreate
   pure box
 

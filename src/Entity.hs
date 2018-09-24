@@ -86,7 +86,8 @@ mkEntityPos Map{..} w h pos eX eY = do
 
 mkEntity
   :: ( MonadHold t m, MonadFix m
-     , ToEntity t e, GridManager t (Entity t) m
+     , ToEntity t e
+     , GridManager t (Entity t) m
      )
   => Unique
   -> e

@@ -14,6 +14,8 @@ import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
 import Linear.V2 (V2, _x, _y)
 
+import qualified Data.Map as Map
+
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
@@ -24,6 +26,7 @@ import Grid.Quadrant (Quadrant)
 import GridManager.Class (GridManager)
 import Map (Map)
 import Position (HasPosition(..))
+import SceneManager.Class (SceneManager, addToScene)
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 
 data Player t
@@ -72,6 +75,7 @@ mkPlayerPos mp Controls{..} w h pos = mdo
 mkPlayer
   :: ( MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
+     , SceneManager t m
      , Adjustable t m
      )
   => Map
@@ -94,10 +98,13 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
     (_, edPlayerQuadrants) <-
       runWithReplace
       (pure ())
-      ((\u -> mkEntity u player) <$> eUnique)
+      ((\u -> mkEntity u player) <$>
+        eUnique)
 
     _playerQuadrants <- join <$> holdDyn (pure []) edPlayerQuadrants
 
     let player = Player{..}
+
+  addToScene $ (\u -> Map.singleton u . Just $ toEntity player) <$> eUnique
 
   pure player
