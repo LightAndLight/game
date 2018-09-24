@@ -74,13 +74,6 @@ mkBoxPicture
 mkBoxPicture (open, closed) dBoxOpen =
   (\b -> if b then open else closed) <$> dBoxOpen
 
-mkBoxOpenedFirstTime
-  :: (Reflex t, MonadHold t m)
-  => Dynamic t Bool
-  -> m (Event t ())
-mkBoxOpenedFirstTime dOpen =
-  switchHold (() <$ updated dOpen) (never <$ updated dOpen)
-
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
@@ -102,7 +95,7 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
   rec
     _boxOpen <- mkBoxOpen player box
-    _boxOpenedFirstTime <- mkBoxOpenedFirstTime _boxOpen
+    _boxOpenedFirstTime <- headE $ () <$ updated _boxOpen
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
@@ -139,7 +132,7 @@ mkBox' mp u eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
   rec
     _boxOpen <- mkBoxOpen player box
-    _boxOpenedFirstTime <- mkBoxOpenedFirstTime _boxOpen
+    _boxOpenedFirstTime <- headE $ () <$ updated _boxOpen
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
