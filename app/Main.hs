@@ -119,7 +119,7 @@ game
 game screenSize Assets{..} refresh input = do
   let mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
   rec
-    (dPicture, vp) <- runSceneManagerT vp $
+    (dPicture, vp) <- runSceneManagerT (renderedEntity vp) $
       runGridManagerT 2 2 mp $ mdo
         controls <- mkControls refresh input
 

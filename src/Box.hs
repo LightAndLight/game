@@ -77,7 +77,7 @@ mkBoxPicture (open, closed) dBoxOpen =
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
-     , SceneManager t m
+     , SceneManager t (Entity t) m
      , Adjustable t m
      )
   => Map
@@ -115,7 +115,7 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
 mkBox'
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m, SceneManager t m
+     , GridManager t (Entity t) m, SceneManager t (Entity t) m
      , Adjustable t m
      )
   => Map

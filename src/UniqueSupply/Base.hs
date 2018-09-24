@@ -88,6 +88,6 @@ instance NotReady t m => NotReady t (UniqueSupplyT t m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
-instance SceneManager t m => SceneManager t (UniqueSupplyT t m) where
+instance SceneManager t e m => SceneManager t e (UniqueSupplyT t m) where
   getScene = lift getScene
   addToScene = lift . addToScene

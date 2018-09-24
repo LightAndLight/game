@@ -103,7 +103,7 @@ instance NotReady t m => NotReady t (GridManagerT t g m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
-instance SceneManager t m => SceneManager t (GridManagerT t g m) where
+instance SceneManager t e m => SceneManager t e (GridManagerT t g m) where
   getScene = lift getScene
   addToScene = lift . addToScene
 

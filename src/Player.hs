@@ -75,7 +75,7 @@ mkPlayerPos mp Controls{..} w h pos = mdo
 mkPlayer
   :: ( MonadHold t m, MonadFix m
      , UniqueSupply t m, GridManager t (Entity t) m
-     , SceneManager t m
+     , SceneManager t (Entity t) m
      , Adjustable t m
      )
   => Map

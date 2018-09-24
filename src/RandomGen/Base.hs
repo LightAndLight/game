@@ -88,6 +88,6 @@ instance (Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (RandomGenT
       b
       c
 
-instance SceneManager t m => SceneManager t (RandomGenT t m) where
+instance SceneManager t e m => SceneManager t e (RandomGenT t m) where
   getScene = lift getScene
   addToScene = lift . addToScene
