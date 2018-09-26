@@ -3,30 +3,27 @@
 {-# language RecursiveDo #-}
 {-# language RecordWildCards #-}
 {-# language TemplateHaskell #-}
+{-# language TupleSections #-}
 module Player where
 
 import Reflex
 
 import Control.Lens.Getter ((^.))
 import Control.Lens.TH (makeLenses)
-import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
 import Linear.V2 (V2, _x, _y)
 
-import qualified Data.Map as Map
-
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity
-  ( Entity, ToEntity(..), HasQuadrants(..), HasPicture(..)
-  , mkEntity, mkEntityPos
+  ( ToEntity(..), HasQuadrants(..), HasPicture(..)
+  , mkEntityPos
   )
+import EntityStore.Class (EntityStore, tellEntity, quadrantsFor)
 import Grid.Quadrant (Quadrant)
-import GridManager.Class (GridManager)
 import Map (Map)
 import Position (HasPosition(..))
-import SceneManager.Class (SceneManager, addToScene)
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 
 data Player t
@@ -74,8 +71,7 @@ mkPlayerPos mp Controls{..} w h pos = mdo
 
 mkPlayer
   :: ( MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t (Entity t) m
-     , SceneManager t (Entity t) m
+     , UniqueSupply t m, EntityStore t m
      , Adjustable t m
      )
   => Map
@@ -95,16 +91,9 @@ mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
   eUnique <- requestUnique eCreate
 
   rec
-    (_, edPlayerQuadrants) <-
-      runWithReplace
-      (pure ())
-      ((\u -> mkEntity u player) <$>
-        eUnique)
-
-    _playerQuadrants <- join <$> holdDyn (pure []) edPlayerQuadrants
+    tellEntity $ (, Just $ toEntity player) <$> eUnique
+    _playerQuadrants <- quadrantsFor eUnique
 
     let player = Player{..}
-
-  addToScene $ (\u -> Map.singleton u . Just $ toEntity player) <$> eUnique
 
   pure player

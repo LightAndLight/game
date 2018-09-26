@@ -3,29 +3,29 @@
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
 {-# language TemplateHaskell #-}
+{-# language TupleSections #-}
 module Box where
 
 import Reflex
+import Control.Lens.Operators ((<&>))
 import Control.Lens.TH (makeLenses)
-import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
-import Linear.V2 (V2)
+import Data.Functor (($>))
+import Linear.V2 (V2(..))
 
-import qualified Data.Map as Map
-
-import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
+import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
 import Entity
-  ( Entity, ToEntity(..), HasQuadrants(..)
+  ( ToEntity(..), HasQuadrants(..)
   , HasPicture(..)
-  , mkEntity, mkEntityPos, intersects
+  , mkEntityPos, intersects
   )
+import EntityStore.Class (EntityStore, tellEntity, quadrantsFor)
 import Graphics.Gloss (Picture)
 import Grid.Quadrant (Quadrant)
-import GridManager.Class (GridManager)
-import Map (Map)
+import Map (Map(..))
 import Player (Player(..))
 import Position (HasPosition(..))
-import SceneManager.Class (SceneManager, addToScene)
+import RandomGen.Class (RandomGen, randomPosition)
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 import Unique (Unique)
 
@@ -74,10 +74,37 @@ mkBoxPicture
 mkBoxPicture (open, closed) dBoxOpen =
   (\b -> if b then open else closed) <$> dBoxOpen
 
+mkBoxAction
+  :: ( Reflex t, MonadHold t m, MonadFix m
+     , EntityStore t m, UniqueSupply t m, RandomGen t m, Adjustable t m
+     )
+  => Map
+  -> (Picture, Picture)
+  -> Width Float
+  -> Height Float
+  -> Player t
+  -> Event t ()
+  -> m ()
+mkBoxAction mp pics w h player eOpened = do
+  _ <- runWithReplace
+    (pure ())
+    (eOpened $> do
+        eRandomPosition <-
+          randomPosition
+            (traceEventWith show eOpened)
+            (0, floor . unWidth $ _mapWidth mp)
+            (0, floor . unHeight $ _mapHeight mp)
+
+        _ <- runWithReplace
+          (pure ())
+          (eRandomPosition <&>
+            \(x, y) -> mkBox mp eRandomPosition pics w h (V2 x y) player)
+        pure ())
+  pure ()
+
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, GridManager t (Entity t) m
-     , SceneManager t (Entity t) m
+     , UniqueSupply t m, EntityStore t m, RandomGen t m
      , Adjustable t m
      )
   => Map
@@ -99,23 +126,22 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    (_, edQuadrants) <-
-      runWithReplace
-        (pure ())
-        ((\u -> do
-             mkEntity u box) <$>
-          eUnique)
-
-    _boxQuadrants <- join <$> holdDyn (pure []) edQuadrants
+    tellEntity $ (, Just $ toEntity box) <$> eUnique
+    _boxQuadrants <- quadrantsFor eUnique
+    mkBoxAction
+      mp
+      (openPic, closedPic)
+      _boxWidth _boxHeight
+      player
+      _boxOpenedFirstTime
 
     let box = Box{..}
 
-  addToScene $ (\u -> Map.singleton u . Just $ toEntity box) <$> eUnique
   pure box
 
 mkBox'
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , GridManager t (Entity t) m, SceneManager t (Entity t) m
+     , UniqueSupply t m, RandomGen t m, EntityStore t m
      , Adjustable t m
      )
   => Map
@@ -136,10 +162,16 @@ mkBox' mp u eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    _boxQuadrants <- mkEntity u box
+    tellEntity $ (u, Just $ toEntity box) <$ eCreate
+    _boxQuadrants <- quadrantsFor (u <$ eCreate)
+    mkBoxAction
+      mp
+      (openPic, closedPic)
+      _boxWidth _boxHeight
+      player
+      _boxOpenedFirstTime
 
     let box = Box{..}
 
-  addToScene $ (Map.singleton u . Just $ toEntity box) <$ eCreate
   pure box
 

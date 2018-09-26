@@ -17,10 +17,9 @@ import Control.Lens.Getter (view)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
-import Data.Functor.Misc (Const2(..))
 import Data.Map (Map)
 import Data.Semigroup ((<>))
-import Graphics.Gloss (Display(..), Picture, pictures, blank, white)
+import Graphics.Gloss (Display(..), Picture, blank, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
@@ -31,15 +30,15 @@ import Box (Box(..), mkBox, mkBox', boxOpenedFirstTime)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (toEntity)
-import GridManager.Base (runGridManagerT)
+import EntityStore.Base (runEntityStoreT)
+import EntityStore.Class (askEntities)
+import Grid (GridConfig(..))
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen, randomIntR)
 import Render.Entity (renderedEntity)
 import Render.Map (renderedMap)
-import SceneManager.Base (runSceneManagerT)
-import SceneManager.Class (SceneManager, getScene, addToScene)
-import Unique (Unique, unsafeMkUnique)
+import Unique (Unique)
 import UniqueSupply.Base (runUniqueSupplyT)
 import UniqueSupply.Class (UniqueSupply(..))
 import Viewport (ScreenSize(..), mkViewport, ViewportConfig(..))
@@ -54,17 +53,7 @@ data Assets
   , _assetsBoxOpenPicture :: Picture
   }
 
-randomPosition
-  :: (MonadHold t m, RandomGen t m)
-  => Event t a
-  -> (Int, Int)
-  -> (Int, Int)
-  -> m (Event t (V2 Float))
-randomPosition eCreate xBounds yBounds = do
-  eX <- fmap fromIntegral <$> randomIntR (xBounds <$ eCreate)
-  eY <- fmap fromIntegral <$> randomIntR (yBounds <$ eCreate)
-  switchHoldPromptly never ((\w -> V2 w <$> eY) <$> eX)
-
+{-
 switchHoldUnique
   :: (MonadHold t m, UniqueSupply t m)
   => Event t a
@@ -103,6 +92,7 @@ mkUniqueAndPosNotOnPlayer dPlayerPos eCreate = switchDyn <$> workflow w
             current dPlayerPos <@>
             eRandomPos)
       pure (eRandomPos, w <$ eRetry)
+-}
 
 game
   :: forall t m
@@ -116,71 +106,74 @@ game
   -> Event t Float
   -> Event t InputEvent
   -> m (Dynamic t Picture)
-game screenSize Assets{..} refresh input = do
-  let mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
-  rec
-    (dPicture, vp) <- runSceneManagerT (renderedEntity vp) $
-      runGridManagerT 2 2 mp $ mdo
-        controls <- mkControls refresh input
+game screenSize Assets{..} refresh input = 
+  let
+    mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
+    gc = GridConfig 10 10 (Width 1000) (Height 1000)
+  in runEntityStoreT gc $ mdo
+    controls <- mkControls refresh input
 
-        ePostBuild <- getPostBuild
+    ePostBuild <- getPostBuild
 
-        player@Player{..} <-
-          mkPlayer
-            mp
-            controls
-            ePostBuild
-            _assetsPlayerPicture
-            (Width 20)
-            (Height 20)
-            (V2 0 0)
+    player@Player{..} <-
+      mkPlayer
+        mp
+        controls
+        ePostBuild
+        _assetsPlayerPicture
+        (Width 20)
+        (Height 20)
+        (V2 0 0)
 
-        box@Box{..} <-
-          mkBox
-            mp
-            ePostBuild
-            (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-            (Width 10)
-            (Height 10)
-            (V2 40 40)
-            player
+    Box{..} <-
+      mkBox
+        mp
+        ePostBuild
+        (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+        (Width 10)
+        (Height 10)
+        (V2 40 40)
+        player
 
-        eInitial <-
-          mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
-        eLater <-
-          networkView $
-            fmap fold .
-            traverse
-              (mkUniqueAndPosNotOnPlayer _playerPosition .
-              view boxOpenedFirstTime) <$>
-            dBoxes
-        eInsert <- switchHold never eLater
+{-
+    eInitial <-
+      mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
+    eLater <-
+      networkView $
+        fmap fold .
+        traverse
+          (mkUniqueAndPosNotOnPlayer _playerPosition .
+          view boxOpenedFirstTime) <$>
+        dBoxes
 
-        dBoxes :: Dynamic t (Map Unique (Box t)) <-
-          listHoldWithKey
-            mempty
-            (eInitial <> eInsert)
-            (\u pos -> do
-               eCreate <- headE $ updated dBoxes
-               mkBox'
-                 mp
-                 u
-                 eCreate
-                 (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-                 (Width 10)
-                 (Height 10)
-                 pos
-                 player)
+    eInsert <- switchHold never eLater
 
-        viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
+    dBoxes :: Dynamic t (Map Unique (Box t)) <-
+      listHoldWithKey
+        mempty
+        (eInitial <> eInsert)
+        (\u pos -> do
+            eCreate <- headE $ updated dBoxes
+            mkBox'
+              mp
+              u
+              eCreate
+              (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+              (Width 10)
+              (Height 10)
+              pos
+              player)
+-}
+    viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
 
-        dPicture <- getScene
-        let scene = renderedMap viewport mp <> dPicture
-        toDisplay <- join <$> holdDyn (pure blank) (scene <$ ePostBuild)
+    dPicture <- askEntities
+    let
+      scene =
+        renderedMap viewport mp <>
+        (dPicture >>= foldMap (renderedEntity viewport))
+    toDisplay <- join <$> holdDyn (pure blank) (scene <$ ePostBuild)
 
-        pure (toDisplay, viewport)
-
-  pure dPicture
+    pure toDisplay
 
 main :: IO ()
 main = do

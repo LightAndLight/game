@@ -1,4 +1,5 @@
 {-# language DeriveFunctor, StandaloneDeriving #-}
+{-# language ScopedTypeVariables #-}
 module Grid where
 
 import Reflex
@@ -10,83 +11,55 @@ import Position (HasPosition(..))
 import qualified Data.Map as Map
 
 import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
+import Grid.Quadrant (Quadrant(..))
 import Unique (Unique)
 
-data Cell t a
-  = Cell
-  { cellPosition :: V2 Float
-  , cellWidth :: Width Float
-  , cellHeight :: Height Float
-  , cellContents :: Dynamic t a
+data GridConfig
+  = GridConfig
+  { gcRows :: Int
+  , gcColumns :: Int
+  , gcWidth :: Width Float
+  , gcHeight :: Height Float
   }
-deriving instance Reflex t => Functor (Cell t)
 
-newtype Row t a
-  = Row
-  { unRow :: [Cell t a]
-  }
-deriving instance Reflex t => Functor (Row t)
-
-newtype Rows t a
-  = Rows
-  { unRows :: [Row t a]
-  }
-deriving instance Reflex t => Functor (Rows t)
-
-data Grid t a
-  = Grid
-  { _gridWidth :: Width Float -- ^ width
-  , _gridHeight :: Height Float -- ^ height
-  , _gridRows :: Rows t (Map Unique a)
-  }
-deriving instance Reflex t => Functor (Grid t)
-
-makeGrid
-  :: ( Reflex t
+getQuadrants
+  :: forall t m a
+   . ( Reflex t, MonadHold t m, Adjustable t m
      , HasPosition t a, HasWidth a, HasHeight a
      )
-  => Int -- ^ Number of rows
-  -> Int -- ^ Numbre of columns
-  -> Width Float
-  -> Height Float
-  -> Dynamic t (Map Unique a)
-  -> Grid t a
-makeGrid numRows numCols w h objects = Grid w h $ Rows cells
+  => GridConfig
+  -> Event t (Map Unique (Maybe a))
+  -> m (Dynamic t (Map Unique [Quadrant]))
+getQuadrants (GridConfig rows cols w h) eUpdate = do
+  d <- listHoldWithKey Map.empty eUpdate $ \_ a -> pure $ quadrantsFor a
+  pure $ d >>= distributeMapOverDynPure
   where
-    colWidth = Width $ unWidth w / fromIntegral numCols
-    rowHeight = Height $ unHeight h / fromIntegral numRows
+    colWidth = unWidth w / fromIntegral cols
+    rowHeight = unHeight h / fromIntegral rows
 
-    xs = (unWidth colWidth *) <$> [0..fromIntegral $ numCols-1]
-    ys = (unHeight rowHeight *) <$> [0..fromIntegral $ numRows-1]
+    quadrants :: [(V2 Float, Quadrant)]
+    quadrants = do
+      x <- [0..cols-1]
+      y <- [0..rows-1]
+      pure
+        ( V2 (colWidth * fromIntegral x) (rowHeight * fromIntegral y)
+        , Quadrant (x, y)
+        )
 
-    inQuadrant
+    quadrantsFor
       :: (Reflex t, HasPosition t a, HasWidth a, HasHeight a)
-      => Float -> Float
-      -> Map Unique a
-      -> Dynamic t (Map Unique a)
-    inQuadrant x y =
-      fmap
-        (Map.mapMaybe $ \(item, pos) ->
-         if
-           not $
-           pos^._x + unWidth (item^.width) < x ||
-           pos^._y + unHeight (item^.height) < y ||
-           pos^._x > x + unWidth colWidth ||
-           pos^._y > y + unHeight rowHeight
-         then Just item
-         else Nothing) .
-      distributeMapOverDynPure .
-      fmap (\i -> (,) i <$> i^.position)
-
-    cells =
-      (\y ->
-         Row $
-         (\x ->
-            Cell
-              (V2 x y)
-              colWidth
-              rowHeight
-              (objects >>= inQuadrant x y)) <$>
-         xs) <$>
-      ys
-
+      => a -> Dynamic t [Quadrant]
+    quadrantsFor item = do
+      pos <- item^.position
+      pure $
+        fmapMaybe
+          (\(qpos, q) ->
+            if
+              not $
+              pos^._x + unWidth (item^.width) < qpos^._x ||
+              pos^._y + unHeight (item^.height) < qpos^._y ||
+              pos^._x > qpos^._x + colWidth ||
+              pos^._y > qpos^._y + rowHeight
+            then Just q
+            else Nothing)
+          quadrants

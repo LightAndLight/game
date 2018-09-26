@@ -17,10 +17,9 @@ import Linear.V2 (V2(..), R1(..), R2(..))
 
 import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
 import Grid.Quadrant (Quadrant)
-import GridManager.Class (GridManager, registerEntity, getQuadrants)
-import Map (Map(..))
 import Position (HasPosition(..))
-import Unique (Unique)
+
+import qualified Map as Game
 
 data Entity t
   = Entity
@@ -30,7 +29,6 @@ data Entity t
   , _entityWidth :: Width Float
   , _entityHeight :: Height Float
   }
-makeLenses ''Entity
 
 class HasQuadrants t e | e -> t where
   quadrants :: Lens' e (Dynamic t [Quadrant])
@@ -54,22 +52,16 @@ class ToEntity t e | e -> t where
     , _entityHeight = e ^. height
     }
 
-instance HasPicture t (Entity t) where; picture = entityPicture
-instance HasPosition t (Entity t) where; position = entityPosition
-instance HasQuadrants t (Entity t) where; quadrants = entityQuadrants
-instance HasWidth (Entity t) where; width = entityWidth
-instance HasHeight (Entity t) where; height = entityHeight
-
 mkEntityPos
   :: (Reflex t, MonadHold t m, MonadFix m)
-  => Map
+  => Game.Map
   -> Width Float
   -> Height Float
   -> V2 Float -- ^ initial position
   -> Event t Float -- ^ when x coordinate changed
   -> Event t Float -- ^ when y coordinate changed
   -> m (Dynamic t (V2 Float))
-mkEntityPos Map{..} w h pos eX eY = do
+mkEntityPos Game.Map{..} w h pos eX eY = do
   dX <-
     holdUniqDyn =<<
     holdDyn
@@ -84,17 +76,7 @@ mkEntityPos Map{..} w h pos eX eY = do
 
   pure $ V2 <$> dX <*> dY
 
-mkEntity
-  :: ( MonadHold t m, MonadFix m
-     , ToEntity t e
-     , GridManager t (Entity t) m
-     )
-  => Unique
-  -> e
-  -> m (Dynamic t [Quadrant])
-mkEntity u e = do
-  registerEntity u $ toEntity e
-  getQuadrants u
+makeLenses ''Entity
 
 intersects
   :: Reflex t
@@ -121,3 +103,9 @@ intersects e1 e2 =
   ((^. _y) <$> e1^.entityPosition) <*>
   ((^. _x) <$> e2^.entityPosition) <*>
   ((^. _y) <$> e2^.entityPosition)
+
+instance HasPicture t (Entity t) where; picture = entityPicture
+instance HasPosition t (Entity t) where; position = entityPosition
+instance HasQuadrants t (Entity t) where; quadrants = entityQuadrants
+instance HasWidth (Entity t) where; width = entityWidth
+instance HasHeight (Entity t) where; height = entityHeight

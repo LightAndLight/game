@@ -38,10 +38,10 @@ library
                        , Box
                        , Dimensions
                        , Entity
+                       , EntityStore.Base
+                       , EntityStore.Class
                        , Grid
                        , Grid.Quadrant
-                       , GridManager.Base
-                       , GridManager.Class
                        , Map
                        , Viewport
                        , Controls
@@ -49,10 +49,9 @@ library
                        , Position
                        , RandomGen.Base
                        , RandomGen.Class
+                       , Render
                        , Render.Entity
                        , Render.Map
-                       , SceneManager.Base
-                       , SceneManager.Class
                        , UniqueSupply.Base
                        , UniqueSupply.Class
   build-depends:       base <5

@@ -11,9 +11,7 @@ import Control.Monad.State (MonadState(..), runState, gets)
 import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.Functor.Const (Const(..))
 
-import GridManager.Class (GridManager(..))
 import RandomGen.Class (RandomGen(..))
-import SceneManager.Class (SceneManager(..))
 import Unique
 import UniqueSupply.Class
 
@@ -25,6 +23,27 @@ newtype UniqueSupplyT t m a
   , MonadSample t, MonadHold t, PostBuild t
   )
 
+runUniqueSupplyT
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => Supply
+  -> UniqueSupplyT t m a
+  -> m a
+runUniqueSupplyT initialSupply (UniqueSupplyT m) = mdo
+  bSupply <- hold initialSupply $ snd <$> eResponse
+  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
+  let eResponse = getUniques <$> bSupply <@> eRequest
+  pure a
+  where
+    getUniques is =
+      flip runState is .
+      traverseRequesterData
+        (\_ -> do
+            (u, s') <- gets freshId
+            put s'
+            pure $ Const $ Unique u)
+
+instance RandomGen t m => RandomGen t (UniqueSupplyT t m)
+instance NotReady t m => NotReady t (UniqueSupplyT t m)
 instance (Reflex t, Monad m) => UniqueSupply t (UniqueSupplyT t m) where
   requestUnique = UniqueSupplyT . fmap (fmap getConst) . requesting . (Const () <$)
 
@@ -56,38 +75,3 @@ instance (Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (UniqueSupp
       (\x y -> unUniqueSupplyT $ a x y)
       b
       c
-
-runUniqueSupplyT
-  :: (Reflex t, MonadHold t m, MonadFix m)
-  => Supply
-  -> UniqueSupplyT t m a
-  -> m a
-runUniqueSupplyT initialSupply (UniqueSupplyT m) = mdo
-  bSupply <- hold initialSupply $ snd <$> eResponse
-  (a, eRequest) <- runRequesterT m $ fst <$> eResponse
-  let eResponse = getUniques <$> bSupply <@> eRequest
-  pure a
-  where
-    getUniques is =
-      flip runState is .
-      traverseRequesterData
-        (\_ -> do
-            (u, s') <- gets freshId
-            put s'
-            pure $ Const $ Unique u)
-
-instance GridManager t g m => GridManager t g (UniqueSupplyT t m) where
-  getGrid = lift getGrid
-  registerEntity a b = lift $ registerEntity a b
-
-instance RandomGen t m => RandomGen t (UniqueSupplyT t m) where
-  randomInt = lift . randomInt
-  randomIntR = lift . randomIntR
-
-instance NotReady t m => NotReady t (UniqueSupplyT t m) where
-  notReadyUntil = lift . notReadyUntil
-  notReady = lift notReady
-
-instance SceneManager t e m => SceneManager t e (UniqueSupplyT t m) where
-  getScene = lift getScene
-  addToScene = lift . addToScene
