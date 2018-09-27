@@ -102,11 +102,12 @@ game screenSize Assets{..} refresh input =
         switchDyn (foldMap (view boxUpdate) <$> dBoxes)
 
     dBoxes :: Dynamic t (Map Unique (Box t)) <-
-      listHoldWithKey Map.empty eBoxesUpdated $ \_ pos -> mdo
+      listHoldWithKey Map.empty eBoxesUpdated $ \u pos -> mdo
         let dBoxQuadrants = getQuadrants'' gc box
         box <-
           mkBox
             mp
+            u
             dBoxQuadrants
             (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
             (Width 10)

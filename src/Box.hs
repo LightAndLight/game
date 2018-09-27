@@ -8,10 +8,10 @@
 module Box where
 
 import Reflex
-import Reflex.Network (networkView)
 import Reflex.NotReady.Class (NotReady)
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
+import Data.Semigroup ((<>))
 import Linear.V2 (V2(..))
 
 import qualified Data.Map
@@ -81,18 +81,16 @@ mkBoxUpdate
      , UniqueSupply t m, RandomGen t m, Adjustable t m
      , NotReady t m, PostBuild t m
      )
-  => Player t
+  => Unique
+  -> Player t
+  -> Event t ()
   -> Event t ()
   -> m (Event t (Data.Map.Map Unique (Maybe (V2 Float))))
-mkBoxUpdate Player{..} openedFirstTime = do
-  eeUpdate <-
-    networkView =<<
-    holdDyn
-      (pure never)
-      (mkUniqueAndPosNotOnPosition _playerPosition openedFirstTime <$
-       openedFirstTime)
-
-  switchHold never eeUpdate
+mkBoxUpdate u Player{..} openedFirstTime openedFiveTimes = do
+  e1 <- mkUniqueAndPosNotOnPosition _playerPosition openedFirstTime
+  pure $
+    e1 <>
+    (Data.Map.singleton u Nothing <$ openedFiveTimes)
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
@@ -100,6 +98,7 @@ mkBox
      , NotReady t m, PostBuild t m, Adjustable t m
      )
   => Map
+  -> Unique
   -> Dynamic t [Quadrant]
   -> (Picture, Picture)
   -> Width Float
@@ -107,16 +106,19 @@ mkBox
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox mp _boxQuadrants (openPic, closedPic) _boxWidth _boxHeight bPos player = do
+mkBox mp u _boxQuadrants (openPic, closedPic) _boxWidth _boxHeight bPos player = do
   _boxPosition <- mkEntityPosition mp _boxWidth _boxHeight bPos never never
 
   rec
     _boxOpen <- mkBoxOpen player box
     _boxOpenedFirstTime <- headE $ () <$ updated _boxOpen
 
+    dBoxOpenedCount :: Dynamic t Int <- count . ffilter id $ updated _boxOpen
+    let openedFiveTimes = () <$ ffilter (>=5) (updated dBoxOpenedCount)
+
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    _boxUpdate <- mkBoxUpdate player _boxOpenedFirstTime
+    _boxUpdate <- mkBoxUpdate u player _boxOpenedFirstTime openedFiveTimes
 
     let box = Box{..}
 
