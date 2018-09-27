@@ -43,8 +43,6 @@ library
                        , Entity.Picture
                        , Entity.Position
                        , Entity.Quadrants
-                       , EntityStore.Base
-                       , EntityStore.Class
                        , Grid
                        , Grid.Quadrant
                        , Map

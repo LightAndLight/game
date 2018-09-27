@@ -7,22 +7,18 @@
 module Main where
 
 import Reflex
-import Reflex.Network (networkView, networkHold)
 import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
-import Reflex.Workflow (Workflow(..), workflow)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter (view)
 import Control.Lens.Review ((#))
 import Control.Lens.Setter (over, mapped)
-import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
-import Data.Functor.Misc (Const2(..))
 import Data.Map (Map)
 import Data.Semigroup ((<>))
-import Graphics.Gloss (Display(..), Picture, blank, white)
+import Graphics.Gloss (Display(..), Picture, white)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
@@ -33,14 +29,11 @@ import Box (Box(..), mkBox, boxUpdate)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (Entity, _Entity)
-import Entity.Picture (picture)
-import EntityStore.Base (runEntityStoreT)
-import EntityStore.Class (askEntities)
 import Grid (GridConfig(..), getQuadrants'')
 import Grid.Quadrant (Quadrant)
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
-import RandomGen.Class (RandomGen, randomIntR, randomPosition)
+import RandomGen.Class (RandomGen)
 import Render.Entity (renderedEntity)
 import Render.Map (renderedMap)
 import Unique (Unique)
@@ -109,7 +102,7 @@ game screenSize Assets{..} refresh input =
         switchDyn (foldMap (view boxUpdate) <$> dBoxes)
 
     dBoxes :: Dynamic t (Map Unique (Box t)) <-
-      listHoldWithKey Map.empty eBoxesUpdated $ \u pos -> mdo
+      listHoldWithKey Map.empty eBoxesUpdated $ \_ pos -> mdo
         let dBoxQuadrants = getQuadrants'' gc box
         box <-
           mkBox
