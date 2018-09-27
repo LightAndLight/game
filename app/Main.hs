@@ -34,7 +34,7 @@ import Grid.Quadrant (Quadrant)
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen)
-import Render.Entity (renderedEntity)
+import Render (render)
 import Render.Map (renderedMap)
 import Unique (Unique)
 import UniqueSupply.Base (runUniqueSupplyT)
@@ -125,7 +125,7 @@ game screenSize Assets{..} refresh input =
     pure $
       fold
       [ renderedMap viewport mp
-      , dEntities >>= foldMap (renderedEntity viewport)
+      , render viewport dEntities
       ]
 
 main :: IO ()

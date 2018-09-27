@@ -21,7 +21,7 @@ import Entity.Position (HasPosition(..), mkEntityPosition)
 import Entity.Quadrants (HasQuadrants(..))
 import Grid.Quadrant (Quadrant)
 import Map (Map)
-import UniqueSupply.Class (UniqueSupply, requestUnique)
+import UniqueSupply.Class (UniqueSupply)
 
 data Player t
   = Player
