@@ -7,16 +7,20 @@ import Control.Lens.Getter ((^.))
 import Graphics.Gloss (Picture, translate, blank)
 import Linear.V2 (_x, _y)
 
-import Dimensions (Width(..), Height(..))
-import Entity (Entity(..))
+import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
+import Entity.Picture (HasPicture(..))
+import Entity.Position (HasPosition(..))
 import Viewport (Viewport(..))
 
 renderedEntity
-  :: Reflex t
+  :: ( Reflex t
+     , HasPosition t a, HasPicture t a
+     , HasWidth a, HasHeight a
+     )
   => Viewport t
-  -> Entity t
+  -> a
   -> Dynamic t Picture
-renderedEntity Viewport{..} Entity{..} =
+renderedEntity Viewport{..} a =
   (\vPos ePos ePic ->
       if
         vPos^._x <= ePos^._x &&
@@ -25,11 +29,11 @@ renderedEntity Viewport{..} Entity{..} =
         ePos^._y <= (vPos^._y + unHeight _vpHeight)
       then
         translate
-          ((unWidth _entityWidth - unWidth _vpWidth) / 2 - vPos^._x + ePos^._x)
-          (-(unHeight _entityHeight - unHeight _vpHeight) / 2 + vPos^._y - ePos^._y)
+          ((unWidth (a^.width) - unWidth _vpWidth) / 2 - vPos^._x + ePos^._x)
+          (-(unHeight (a^.height) - unHeight _vpHeight) / 2 + vPos^._y - ePos^._y)
           ePic
       else
         blank) <$>
   _vpPosition <*>
-  _entityPosition <*>
-  _entityPicture
+  (a^.position) <*>
+  (a^.picture)

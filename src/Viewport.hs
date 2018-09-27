@@ -1,4 +1,5 @@
 {-# language DeriveFunctor #-}
+{-# language GADTs #-}
 {-# language LambdaCase #-}
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
@@ -11,8 +12,8 @@ import Control.Monad.Fix (MonadFix)
 import Data.Monoid (Endo(..))
 import Linear.V2 (V2(..), R1(..), R2(..))
 
-import Dimensions (Width(..), Height(..))
-import Entity (Entity(..))
+import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
+import Entity.Position (HasPosition(..))
 import Map (Map(..))
 
 data ScreenSize a = ScreenSize a a
@@ -25,23 +26,26 @@ data Viewport t
   , _vpPosition :: Dynamic t (V2 Float)
   }
 
-data ViewportConfig t
-  = EdgePan
-  { edgePanThreshold :: Float
-  , edgePanTarget :: Entity t
-  }
-  | Controlled
-  { controlledX :: Event t (Float -> Float)
-  , controlledY :: Event t (Float -> Float)
-  }
+data ViewportConfig t where
+  EdgePan ::
+    (HasPosition t a, HasWidth a, HasHeight a)
+    =>
+    { edgePanThreshold :: Float
+    , edgePanTarget :: a
+    } -> ViewportConfig t
+  Controlled ::
+    { controlledX :: Event t (Float -> Float)
+    , controlledY :: Event t (Float -> Float)
+    } -> ViewportConfig t
 
 edgePanEvents
-  :: Reflex t
+  :: (HasPosition t a, HasWidth a, HasHeight a)
+  => Reflex t
   => ScreenSize Float
   -> Float -- ^ Edge-scrolling threshold
-  -> Entity t
+  -> a
   -> (Event t (Endo Float), Event t (Endo Float))
-edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
+edgePanEvents (ScreenSize vpW vpH) dist a = (eX, eY)
   where
     eX =
       (\epos ->
@@ -49,7 +53,7 @@ edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
          let
            toLeftEdge = (vx + dist) - epos^._x
            toRightEdge =
-             (epos^._x + unWidth _entityWidth) -
+             (epos^._x + unWidth (a^.width)) -
              (vx + vpW - dist)
          in
            if toLeftEdge > 0
@@ -58,7 +62,7 @@ edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
              if toRightEdge > 0
              then vx + toRightEdge
              else vx) <$>
-      updated _entityPosition
+      updated (a^.position)
 
     eY =
       (\epos ->
@@ -66,7 +70,7 @@ edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
          let
            toTopEdge = (vy + dist) - epos^._y
            toBottomEdge =
-             (epos^._y + unHeight _entityHeight) -
+             (epos^._y + unHeight (a^.height)) -
              (vy + vpH - dist)
          in
            if toTopEdge > 0
@@ -75,7 +79,7 @@ edgePanEvents (ScreenSize vpW vpH) dist Entity{..} = (eX, eY)
              if toBottomEdge > 0
              then vy + toBottomEdge
              else vy) <$>
-      updated _entityPosition
+      updated (a^.position)
 
 -- | Later configs in the list have higher precedence
 mkViewport

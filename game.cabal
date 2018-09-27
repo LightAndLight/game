@@ -38,6 +38,11 @@ library
                        , Box
                        , Dimensions
                        , Entity
+                       , Entity.Init
+                       , Entity.Intersects
+                       , Entity.Picture
+                       , Entity.Position
+                       , Entity.Quadrants
                        , EntityStore.Base
                        , EntityStore.Class
                        , Grid
@@ -46,7 +51,6 @@ library
                        , Viewport
                        , Controls
                        , Player
-                       , Position
                        , RandomGen.Base
                        , RandomGen.Class
                        , Render

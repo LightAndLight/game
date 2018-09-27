@@ -16,14 +16,11 @@ import Linear.V2 (V2, _x, _y)
 
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
-import Entity
-  ( ToEntity(..), HasQuadrants(..), HasPicture(..)
-  , mkEntityPos
-  )
-import EntityStore.Class (EntityStore, tellEntity, quadrantsFor)
+import Entity.Picture (HasPicture(..))
+import Entity.Position (HasPosition(..), mkEntityPosition)
+import Entity.Quadrants (HasQuadrants(..))
 import Grid.Quadrant (Quadrant)
 import Map (Map)
-import Position (HasPosition(..))
 import UniqueSupply.Class (UniqueSupply, requestUnique)
 
 data Player t
@@ -41,7 +38,6 @@ instance HasPosition t (Player t) where; position = playerPosition
 instance HasPicture t (Player t) where; picture = playerPicture
 instance HasWidth (Player t) where; width = playerWidth
 instance HasHeight (Player t) where; height = playerHeight
-instance ToEntity t (Player t)
 
 mkPlayerPos
   :: (Reflex t, MonadHold t m, MonadFix m)
@@ -65,35 +61,30 @@ mkPlayerPos mp Controls{..} w h pos = mdo
       ((\b n -> if b then n-5 else n) <$> current _dWHeld) <@>
       ((^. _y) <$> current dPlayerPos <@ _eRefresh)
 
-  dPlayerPos <- mkEntityPos mp w h pos eX eY
+  dPlayerPos <- mkEntityPosition mp w h pos eX eY
 
   pure dPlayerPos
 
 mkPlayer
   :: ( MonadHold t m, MonadFix m
-     , UniqueSupply t m, EntityStore t m
+     , UniqueSupply t m
      , Adjustable t m
      )
   => Map
   -> Controls t
-  -> Event t a
+  -> Dynamic t [Quadrant]
   -> Picture
   -> Width Float
   -> Height Float
   -> V2 Float
   -> m (Player t)
-mkPlayer mp controls eCreate pic _playerWidth _playerHeight pPos = do
+mkPlayer mp controls _playerQuadrants pic _playerWidth _playerHeight pPos = do
   _playerPosition <- mkPlayerPos mp controls _playerWidth _playerHeight pPos
+
   let
     _playerPicture = pure pic
     _playerInteract = current _playerPosition <@ _eSpacePressed controls
 
-  eUnique <- requestUnique eCreate
-
-  rec
-    tellEntity $ (, Just $ toEntity player) <$> eUnique
-    _playerQuadrants <- quadrantsFor eUnique
-
-    let player = Player{..}
+  let player = Player{..}
 
   pure player

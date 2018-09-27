@@ -19,6 +19,15 @@ class (Reflex t, Monad m) => UniqueSupply t m | m -> t where
     m (Event t Unique)
   requestUnique = lift . requestUnique
 
+withUnique
+  :: (MonadHold t m, UniqueSupply t m)
+  => Event t a
+  -> (Unique -> Event t b)
+  -> m (Event t b)
+withUnique eCreate f =
+  requestUnique eCreate >>=
+  switchHoldPromptly never . fmap f
+
 instance UniqueSupply t m => UniqueSupply t (StateT s m)
 instance (UniqueSupply t m, Monoid w) => UniqueSupply t (WriterT w m)
 instance UniqueSupply t m => UniqueSupply t (ReaderT e m)

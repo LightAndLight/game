@@ -2,32 +2,34 @@
 {-# language FlexibleInstances, MultiParamTypeClasses #-}
 {-# language RecordWildCards #-}
 {-# language RecursiveDo #-}
+{-# language ScopedTypeVariables #-}
 {-# language TemplateHaskell #-}
 {-# language TupleSections #-}
 module Box where
 
 import Reflex
-import Control.Lens.Operators ((<&>))
+import Reflex.Network (networkView)
+import Reflex.NotReady.Class (NotReady)
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
 import Data.Functor (($>))
 import Linear.V2 (V2(..))
 
+import qualified Data.Map
+
 import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
-import Entity
-  ( ToEntity(..), HasQuadrants(..)
-  , HasPicture(..)
-  , mkEntityPos, intersects
-  )
-import EntityStore.Class (EntityStore, tellEntity, quadrantsFor)
+import Entity.Init (mkUniqueAndPosNotOnPosition)
+import Entity.Intersects (intersects)
+import Entity.Picture (HasPicture(..))
+import Entity.Position (HasPosition(..), mkEntityPosition)
+import Entity.Quadrants (HasQuadrants(..))
 import Graphics.Gloss (Picture)
 import Grid.Quadrant (Quadrant)
 import Map (Map(..))
 import Player (Player(..))
-import Position (HasPosition(..))
-import RandomGen.Class (RandomGen, randomPosition)
-import UniqueSupply.Class (UniqueSupply, requestUnique)
+import RandomGen.Class (RandomGen)
 import Unique (Unique)
+import UniqueSupply.Class (UniqueSupply)
 
 data Box t
   = Box
@@ -38,6 +40,7 @@ data Box t
   , _boxPosition :: Dynamic t (V2 Float)
   , _boxWidth :: Width Float
   , _boxHeight :: Height Float
+  , _boxUpdate :: Event t (Data.Map.Map Unique (Maybe (V2 Float)))
   }
 makeLenses ''Box
 
@@ -46,7 +49,6 @@ instance HasPosition t (Box t) where; position = boxPosition
 instance HasPicture t (Box t) where; picture = boxPicture
 instance HasWidth (Box t) where; width = boxWidth
 instance HasHeight (Box t) where; height = boxHeight
-instance ToEntity t (Box t)
 
 mkBoxOpen
   :: (Reflex t, MonadHold t m, MonadFix m)
@@ -59,7 +61,7 @@ mkBoxOpen player box = mdo
     fforMaybe
       ((,) <$>
         current dBoxOpen <*>
-        current (intersects (toEntity player) (toEntity box)) <@ _playerInteract player)
+        current (intersects player box) <@ _playerInteract player)
       (\(open, touching) ->
           if touching
           then Just $ not open
@@ -74,51 +76,37 @@ mkBoxPicture
 mkBoxPicture (open, closed) dBoxOpen =
   (\b -> if b then open else closed) <$> dBoxOpen
 
-mkBoxAction
-  :: ( Reflex t, MonadHold t m, MonadFix m
-     , EntityStore t m, UniqueSupply t m, RandomGen t m, Adjustable t m
+mkBoxUpdate
+  :: forall t m
+   . ( Reflex t, MonadHold t m, MonadFix m
+     , UniqueSupply t m, RandomGen t m, Adjustable t m
      )
-  => Map
-  -> (Picture, Picture)
-  -> Width Float
-  -> Height Float
-  -> Player t
+  => Player t
   -> Event t ()
-  -> m ()
-mkBoxAction mp pics w h player eOpened = do
-  _ <- runWithReplace
-    (pure ())
-    (eOpened $> do
-        eRandomPosition <-
-          randomPosition
-            (traceEventWith show eOpened)
-            (0, floor . unWidth $ _mapWidth mp)
-            (0, floor . unHeight $ _mapHeight mp)
-
-        _ <- runWithReplace
-          (pure ())
-          (eRandomPosition <&>
-            \(x, y) -> mkBox mp eRandomPosition pics w h (V2 x y) player)
-        pure ())
-  pure ()
+  -> m (Event t (Data.Map.Map Unique (Maybe (V2 Float))))
+mkBoxUpdate Player{..} openedFirstTime = do
+  (_, eeUpdate) <-
+    runWithReplace
+      (pure ())
+      (mkUniqueAndPosNotOnPosition _playerPosition openedFirstTime <$
+       openedFirstTime)
+  traceEventWith show <$> switchHold never eeUpdate
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, EntityStore t m, RandomGen t m
-     , Adjustable t m
+     , UniqueSupply t m, RandomGen t m
+     , NotReady t m, PostBuild t m, Adjustable t m
      )
   => Map
-  -> Event t a
+  -> Dynamic t [Quadrant]
   -> (Picture, Picture)
   -> Width Float
   -> Height Float
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
-  _boxPosition <- mkEntityPos mp _boxWidth _boxHeight bPos never never
-
-  eUnique <- requestUnique eCreate
+mkBox mp _boxQuadrants (openPic, closedPic) _boxWidth _boxHeight bPos player = do
+  _boxPosition <- mkEntityPosition mp _boxWidth _boxHeight bPos never never
 
   rec
     _boxOpen <- mkBoxOpen player box
@@ -126,52 +114,8 @@ mkBox mp eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    tellEntity $ (, Just $ toEntity box) <$> eUnique
-    _boxQuadrants <- quadrantsFor eUnique
-    mkBoxAction
-      mp
-      (openPic, closedPic)
-      _boxWidth _boxHeight
-      player
-      _boxOpenedFirstTime
+    _boxUpdate <- mkBoxUpdate player _boxOpenedFirstTime
 
     let box = Box{..}
 
   pure box
-
-mkBox'
-  :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, RandomGen t m, EntityStore t m
-     , Adjustable t m
-     )
-  => Map
-  -> Unique
-  -> Event t a
-  -> (Picture, Picture)
-  -> Width Float
-  -> Height Float
-  -> V2 Float
-  -> Player t
-  -> m (Box t)
-mkBox' mp u eCreate (openPic, closedPic) _boxWidth _boxHeight bPos player = do
-  _boxPosition <- mkEntityPos mp _boxWidth _boxHeight bPos never never
-
-  rec
-    _boxOpen <- mkBoxOpen player box
-    _boxOpenedFirstTime <- headE $ () <$ updated _boxOpen
-
-    let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
-
-    tellEntity $ (u, Just $ toEntity box) <$ eCreate
-    _boxQuadrants <- quadrantsFor (u <$ eCreate)
-    mkBoxAction
-      mp
-      (openPic, closedPic)
-      _boxWidth _boxHeight
-      player
-      _boxOpenedFirstTime
-
-    let box = Box{..}
-
-  pure box
-

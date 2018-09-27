@@ -7,16 +7,19 @@
 module Main where
 
 import Reflex
-import Reflex.Network (networkView)
+import Reflex.Network (networkView, networkHold)
 import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
 import Reflex.Workflow (Workflow(..), workflow)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter (view)
+import Control.Lens.Review ((#))
+import Control.Lens.Setter (over, mapped)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldMap, fold)
+import Data.Functor.Misc (Const2(..))
 import Data.Map (Map)
 import Data.Semigroup ((<>))
 import Graphics.Gloss (Display(..), Picture, blank, white)
@@ -26,16 +29,18 @@ import Linear.V2 (V2(..))
 
 import qualified Data.Map as Map
 
-import Box (Box(..), mkBox, mkBox', boxOpenedFirstTime)
+import Box (Box(..), mkBox, boxUpdate)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
-import Entity (toEntity)
+import Entity (Entity, _Entity)
+import Entity.Picture (picture)
 import EntityStore.Base (runEntityStoreT)
 import EntityStore.Class (askEntities)
-import Grid (GridConfig(..))
+import Grid (GridConfig(..), getQuadrants'')
+import Grid.Quadrant (Quadrant)
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
-import RandomGen.Class (RandomGen, randomIntR)
+import RandomGen.Class (RandomGen, randomIntR, randomPosition)
 import Render.Entity (renderedEntity)
 import Render.Map (renderedMap)
 import Unique (Unique)
@@ -53,47 +58,6 @@ data Assets
   , _assetsBoxOpenPicture :: Picture
   }
 
-{-
-switchHoldUnique
-  :: (MonadHold t m, UniqueSupply t m)
-  => Event t a
-  -> (Unique -> Event t b)
-  -> m (Event t b)
-switchHoldUnique eCreate f =
-  requestUnique eCreate >>=
-  switchHoldPromptly never . fmap f
-
-mkUniqueAndPos
-  :: ( MonadHold t m
-     , UniqueSupply t m, RandomGen t m
-     )
-  => Event t a
-  -> m (Event t (Map Unique (Maybe (V2 Float))))
-mkUniqueAndPos eCreate = do
-  eRandomPos <- randomPosition eCreate (0, 990) (0, 990)
-  switchHoldUnique eCreate (\u -> Map.singleton u . Just <$> eRandomPos)
-
-mkUniqueAndPosNotOnPlayer
-  :: ( Reflex t, MonadHold t m, MonadFix m
-     , UniqueSupply t m, RandomGen t m
-     , Adjustable t m
-     )
-  => Dynamic t (V2 Float)
-  -> Event t a
-  -> m (Event t (Map Unique (Maybe (V2 Float))))
-mkUniqueAndPosNotOnPlayer dPlayerPos eCreate = switchDyn <$> workflow w
-  where
-    w = Workflow $ do
-      eRandomPos <- mkUniqueAndPos eCreate
-      let
-        eRetry =
-          ffilter id
-          ((\a -> any $ maybe False (a ==)) <$>
-            current dPlayerPos <@>
-            eRandomPos)
-      pure (eRandomPos, w <$ eRetry)
--}
-
 game
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
@@ -106,74 +70,69 @@ game
   -> Event t Float
   -> Event t InputEvent
   -> m (Dynamic t Picture)
-game screenSize Assets{..} refresh input = 
+game screenSize Assets{..} refresh input =
   let
     mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
     gc = GridConfig 10 10 (Width 1000) (Height 1000)
-  in runEntityStoreT gc $ mdo
+  in mdo
+    viewport <- mkViewport screenSize mp [EdgePan 100 player]
     controls <- mkControls refresh input
 
     ePostBuild <- getPostBuild
 
-    player@Player{..} <-
+    ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
+
+    let dPlayerQuadrants :: Dynamic t [Quadrant] = getQuadrants'' gc player
+
+    player :: Player t <-
       mkPlayer
         mp
         controls
-        ePostBuild
+        dPlayerQuadrants
         _assetsPlayerPicture
         (Width 20)
         (Height 20)
         (V2 0 0)
 
-    Box{..} <-
-      mkBox
-        mp
-        ePostBuild
-        (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-        (Width 10)
-        (Height 10)
-        (V2 40 40)
-        player
+    dPlayer <-
+      holdDyn Map.empty $
+      (\u -> Map.singleton u player) <$> ePlayerCreated
 
-{-
-    eInitial <-
-      mkUniqueAndPosNotOnPlayer _playerPosition _boxOpenedFirstTime
-    eLater <-
-      networkView $
-        fmap fold .
-        traverse
-          (mkUniqueAndPosNotOnPlayer _playerPosition .
-          view boxOpenedFirstTime) <$>
-        dBoxes
+    eCreateBox <-
+      fmap (\u -> Map.singleton u $ Just (V2 40 40)) <$>
+      requestUnique ePostBuild
 
-    eInsert <- switchHold never eLater
+    let
+      eBoxesUpdated :: Event t (Map Unique (Maybe (V2 Float)))
+      eBoxesUpdated =
+        eCreateBox <>
+        switchDyn (foldMap (view boxUpdate) <$> dBoxes)
 
     dBoxes :: Dynamic t (Map Unique (Box t)) <-
-      listHoldWithKey
-        mempty
-        (eInitial <> eInsert)
-        (\u pos -> do
-            eCreate <- headE $ updated dBoxes
-            mkBox'
-              mp
-              u
-              eCreate
-              (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-              (Width 10)
-              (Height 10)
-              pos
-              player)
--}
-    viewport <- mkViewport screenSize mp [EdgePan 100 $ toEntity player]
+      listHoldWithKey Map.empty eBoxesUpdated $ \u pos -> mdo
+        let dBoxQuadrants = getQuadrants'' gc box
+        box <-
+          mkBox
+            mp
+            dBoxQuadrants
+            (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+            (Width 10)
+            (Height 10)
+            pos
+            player
+        pure box
 
-    dPicture <- askEntities
     let
-      scene =
-        renderedMap viewport mp <>
-        (dPicture >>= foldMap (renderedEntity viewport))
-    toDisplay <- join <$> holdDyn (pure blank) (scene <$ ePostBuild)
+      dEntities :: Dynamic t (Map Unique (Entity t))
+      dEntities =
+        over (mapped.mapped) (_Entity #) dBoxes <>
+        over (mapped.mapped) (_Entity #) dPlayer
 
-    pure toDisplay
+    pure $
+      fold
+      [ renderedMap viewport mp
+      , dEntities >>= foldMap (renderedEntity viewport)
+      ]
 
 main :: IO ()
 main = do
