@@ -12,7 +12,6 @@ import Reflex.Network (networkView)
 import Reflex.NotReady.Class (NotReady)
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
-import Data.Functor (($>))
 import Linear.V2 (V2(..))
 
 import qualified Data.Map
@@ -80,17 +79,20 @@ mkBoxUpdate
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
      , UniqueSupply t m, RandomGen t m, Adjustable t m
+     , NotReady t m, PostBuild t m
      )
   => Player t
   -> Event t ()
   -> m (Event t (Data.Map.Map Unique (Maybe (V2 Float))))
 mkBoxUpdate Player{..} openedFirstTime = do
-  (_, eeUpdate) <-
-    runWithReplace
-      (pure ())
+  eeUpdate <-
+    networkView =<<
+    holdDyn
+      (pure never)
       (mkUniqueAndPosNotOnPosition _playerPosition openedFirstTime <$
        openedFirstTime)
-  traceEventWith show <$> switchHold never eeUpdate
+
+  switchHold never eeUpdate
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
