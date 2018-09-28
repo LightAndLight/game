@@ -19,6 +19,7 @@ import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity.Picture (HasPicture(..))
 import Entity.Position (HasPosition(..), mkEntityPosition)
 import Entity.Quadrants (HasQuadrants(..))
+import Grid (GridConfig, getQuadrants'')
 import Grid.Quadrant (Quadrant)
 import Map (Map)
 import UniqueSupply.Class (UniqueSupply)
@@ -71,20 +72,20 @@ mkPlayer
      , Adjustable t m
      )
   => Map
+  -> GridConfig
   -> Controls t
-  -> Dynamic t [Quadrant]
   -> Picture
   -> Width Float
   -> Height Float
   -> V2 Float
   -> m (Player t)
-mkPlayer mp controls _playerQuadrants pic _playerWidth _playerHeight pPos = do
+mkPlayer mp gc controls pic _playerWidth _playerHeight pPos = do
   _playerPosition <- mkPlayerPos mp controls _playerWidth _playerHeight pPos
 
   let
     _playerPicture = pure pic
     _playerInteract = current _playerPosition <@ _eSpacePressed controls
-
-  let player = Player{..}
+    _playerQuadrants = getQuadrants'' gc player
+    player = Player{..}
 
   pure player

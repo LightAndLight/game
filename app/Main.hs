@@ -11,12 +11,10 @@ import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
-import Control.Lens.Getter (view)
-import Control.Lens.Operators ((<&>))
 import Control.Lens.Review ((#))
 import Control.Lens.Setter (over, mapped)
 import Control.Monad.Fix (MonadFix)
-import Data.Foldable (foldMap, fold)
+import Data.Foldable (fold)
 import Data.Map (Map)
 import Data.Semigroup ((<>))
 import Graphics.Gloss (Display(..), Picture, white)
@@ -26,12 +24,11 @@ import Linear.V2 (V2(..))
 
 import qualified Data.Map as Map
 
-import Box (Box(..), mkBox, boxUpdate)
+import Box (Box(..), initBox, initBoxes)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (Entity, _Entity)
-import Grid (GridConfig(..), getQuadrants'')
-import Grid.Quadrant (Quadrant)
+import Grid (GridConfig(..))
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen)
@@ -75,15 +72,13 @@ game screenSize Assets{..} refresh input =
     ePostBuild <- getPostBuild
 
 
-
     ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
 
-    let dPlayerQuadrants :: Dynamic t [Quadrant] = getQuadrants'' gc player
     player :: Player t <-
       mkPlayer
         mp
+        gc
         controls
-        dPlayerQuadrants
         _assetsPlayerPicture
         (Width 20)
         (Height 20)
@@ -93,34 +88,18 @@ game screenSize Assets{..} refresh input =
       ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
 
 
+    eInitialBox <-
+      initBox
+        ePostBuild
+        mp
+        gc
+        (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+        player
+        (Width 10)
+        (Height 10)
+        (V2 40 40)
 
-    eBoxUnique <- requestUnique ePostBuild
-    (_, eCreateBox) <-
-      runWithReplace
-        (pure ())
-        (eBoxUnique <&> \u -> mdo
-           let dBoxQuadrants = getQuadrants'' gc box
-           box <- mkBox
-             mp
-             gc
-             u
-             dBoxQuadrants
-             (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-             (Width 10)
-             (Height 10)
-             (V2 40 40)
-             player
-           pure $ Map.singleton u (Just box))
-
-    let
-      eBoxesUpdated :: Event t (Map Unique (Maybe (Box t)))
-      eBoxesUpdated =
-        eCreateBox <>
-        switchDyn (foldMap (view boxUpdate) <$> dBoxes)
-
-    dBoxes :: Dynamic t (Map Unique (Box t)) <-
-      listHoldWithKey Map.empty eBoxesUpdated $ \_ -> pure
-
+    eBoxesUpdated :: Event t (Map Unique (Maybe (Box t))) <- initBoxes eInitialBox
 
 
     dEntities :: Dynamic t (Map Unique (Entity t)) <-
@@ -129,7 +108,6 @@ game screenSize Assets{..} refresh input =
         (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
          over (mapped.mapped.mapped) (_Entity #) ePlayerUpdated)
         (\_ -> pure)
-
 
 
     pure $

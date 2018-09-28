@@ -10,6 +10,8 @@ module Box where
 import Reflex
 import Reflex.Network (networkView)
 import Reflex.NotReady.Class (NotReady)
+import Control.Lens.Fold (foldMapOf, folded)
+import Control.Lens.Getter (view)
 import Control.Lens.Operators ((<&>))
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
@@ -19,7 +21,7 @@ import Linear.V2 (V2(..))
 import qualified Data.Map
 
 import Dimensions (Width(..), Height(..), HasWidth(..), HasHeight(..))
-import Entity.Init (mkUniqueAndPosNotOnPosition)
+import Entity.Init (mkPosNotOnWith)
 import Entity.Intersects (intersects)
 import Entity.Picture (HasPicture(..))
 import Entity.Position (HasPosition(..), mkEntityPosition)
@@ -31,7 +33,7 @@ import Map (Map(..))
 import Player (Player(..))
 import RandomGen.Class (RandomGen)
 import Unique (Unique)
-import UniqueSupply.Class (UniqueSupply)
+import UniqueSupply.Class (UniqueSupply, requestUnique)
 
 data Box t
   = Box
@@ -93,28 +95,47 @@ mkBoxUpdate
   -> Event t ()
   -> m (Event t (Data.Map.Map Unique (Maybe (Box t))))
 mkBoxUpdate mp gc u player pic openedFirstTime openedFiveTimes = do
-  eUPos <- mkUniqueAndPosNotOnPosition (_playerPosition player) openedFirstTime
-  eCreate <-
-    networkView =<<
-    holdDyn (pure mempty)
-    (eUPos <&> \(newU, pos) -> mdo
-        let dBoxQuadrants = getQuadrants'' gc box
-        box <-
-          mkBox
-            mp
-            gc
-            newU
-            dBoxQuadrants
-            pic
-            (Width 10)
-            (Height 10)
-            pos
-            player
-        pure $ Data.Map.singleton newU (Just box))
+  eUnique <- requestUnique openedFirstTime
+  eMkBox :: Event t (m (Data.Map.Map Unique (Maybe (Box t)))) <-
+    mkPosNotOnWith
+      (0, 990)
+      (0, 990)
+      (_playerPosition player)
+      eUnique
+      (\newU pos ->
+         Data.Map.singleton newU . Just <$>
+         mkBox mp gc newU pic (Width 10) (Height 10) pos player)
+
+  eCreate <- networkView =<< holdDyn (pure mempty) eMkBox
   let eDelete = Data.Map.singleton u Nothing <$ openedFiveTimes
   pure $
     eDelete <>
     eCreate
+
+-- | initialise a single box. the returned event is the creation event for that box.
+-- for more dynamic applciations, use 'mkBox'
+initBox
+  :: ( Reflex t, MonadHold t m, MonadFix m
+     , UniqueSupply t m, RandomGen t m
+     , Adjustable t m, NotReady t m, PostBuild t m
+     )
+  => Event t a
+  -> Map
+  -> GridConfig
+  -> (Picture, Picture)
+  -> Player t
+  -> Width Float
+  -> Height Float
+  -> V2 Float
+  -> m (Event t (Data.Map.Map Unique (Maybe (Box t))))
+initBox eCreate mp gc pic player w h pos = do
+  eBoxUnique <- requestUnique eCreate
+  (_, eCreateBox) <-
+    runWithReplace
+      (pure ())
+      (eBoxUnique <&>
+       \u -> Data.Map.singleton u . Just <$> mkBox mp gc u pic w h pos player)
+  pure eCreateBox
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
@@ -124,14 +145,13 @@ mkBox
   => Map
   -> GridConfig
   -> Unique
-  -> Dynamic t [Quadrant]
   -> (Picture, Picture)
   -> Width Float
   -> Height Float
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox mp gc u _boxQuadrants pic@(openPic, closedPic) _boxWidth _boxHeight bPos player = do
+mkBox mp gc u pic@(openPic, closedPic) _boxWidth _boxHeight bPos player = do
   _boxPosition <- mkEntityPosition mp _boxWidth _boxHeight bPos never never
 
   rec
@@ -144,7 +164,25 @@ mkBox mp gc u _boxQuadrants pic@(openPic, closedPic) _boxWidth _boxHeight bPos p
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
     _boxUpdate <- mkBoxUpdate mp gc u player pic _boxOpenedFirstTime openedFiveTimes
+    let _boxQuadrants = getQuadrants'' gc box
 
     let box = Box{..}
 
   pure box
+
+initBoxes
+  :: forall t m
+   . (Reflex t, MonadHold t m, MonadFix m)
+  => Event t (Data.Map.Map Unique (Maybe (Box t)))
+  -> m (Event t (Data.Map.Map Unique (Maybe (Box t))))
+initBoxes externalBoxUpdates = mdo
+  let
+    eBoxesUpdated :: Event t (Data.Map.Map Unique (Maybe (Box t)))
+    eBoxesUpdated =
+      externalBoxUpdates <>
+      switchDyn deBoxUpdate
+
+  deBoxUpdate :: Dynamic t (Event t (Data.Map.Map Unique (Maybe (Box t)))) <-
+    accumDyn (<>) never (foldMapOf (folded.folded) (view boxUpdate) <$> eBoxesUpdated)
+
+  pure eBoxesUpdated
