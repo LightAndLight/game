@@ -8,7 +8,9 @@
 module Box where
 
 import Reflex
+import Reflex.Network (networkView)
 import Reflex.NotReady.Class (NotReady)
+import Control.Lens.Operators ((<&>))
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
 import Data.Semigroup ((<>))
@@ -23,6 +25,7 @@ import Entity.Picture (HasPicture(..))
 import Entity.Position (HasPosition(..), mkEntityPosition)
 import Entity.Quadrants (HasQuadrants(..))
 import Graphics.Gloss (Picture)
+import Grid (GridConfig(..), getQuadrants'')
 import Grid.Quadrant (Quadrant)
 import Map (Map(..))
 import Player (Player(..))
@@ -39,7 +42,7 @@ data Box t
   , _boxPosition :: Dynamic t (V2 Float)
   , _boxWidth :: Width Float
   , _boxHeight :: Height Float
-  , _boxUpdate :: Event t (Data.Map.Map Unique (Maybe (V2 Float)))
+  , _boxUpdate :: Event t (Data.Map.Map Unique (Maybe (Box t)))
   }
 makeLenses ''Box
 
@@ -81,16 +84,37 @@ mkBoxUpdate
      , UniqueSupply t m, RandomGen t m, Adjustable t m
      , NotReady t m, PostBuild t m
      )
-  => Unique
+  => Map
+  -> GridConfig
+  -> Unique
   -> Player t
+  -> (Picture, Picture)
   -> Event t ()
   -> Event t ()
-  -> m (Event t (Data.Map.Map Unique (Maybe (V2 Float))))
-mkBoxUpdate u Player{..} openedFirstTime openedFiveTimes = do
-  e1 <- mkUniqueAndPosNotOnPosition _playerPosition openedFirstTime
+  -> m (Event t (Data.Map.Map Unique (Maybe (Box t))))
+mkBoxUpdate mp gc u player pic openedFirstTime openedFiveTimes = do
+  eUPos <- mkUniqueAndPosNotOnPosition (_playerPosition player) openedFirstTime
+  eCreate <-
+    networkView =<<
+    holdDyn (pure mempty)
+    (eUPos <&> \(newU, pos) -> mdo
+        let dBoxQuadrants = getQuadrants'' gc box
+        box <-
+          mkBox
+            mp
+            gc
+            newU
+            dBoxQuadrants
+            pic
+            (Width 10)
+            (Height 10)
+            pos
+            player
+        pure $ Data.Map.singleton newU (Just box))
+  let eDelete = Data.Map.singleton u Nothing <$ openedFiveTimes
   pure $
-    e1 <>
-    (Data.Map.singleton u Nothing <$ openedFiveTimes)
+    eDelete <>
+    eCreate
 
 mkBox
   :: ( Reflex t, MonadHold t m, MonadFix m
@@ -98,6 +122,7 @@ mkBox
      , NotReady t m, PostBuild t m, Adjustable t m
      )
   => Map
+  -> GridConfig
   -> Unique
   -> Dynamic t [Quadrant]
   -> (Picture, Picture)
@@ -106,7 +131,7 @@ mkBox
   -> V2 Float
   -> Player t
   -> m (Box t)
-mkBox mp u _boxQuadrants (openPic, closedPic) _boxWidth _boxHeight bPos player = do
+mkBox mp gc u _boxQuadrants pic@(openPic, closedPic) _boxWidth _boxHeight bPos player = do
   _boxPosition <- mkEntityPosition mp _boxWidth _boxHeight bPos never never
 
   rec
@@ -118,7 +143,7 @@ mkBox mp u _boxQuadrants (openPic, closedPic) _boxWidth _boxHeight bPos player =
 
     let _boxPicture = mkBoxPicture (openPic, closedPic) _boxOpen
 
-    _boxUpdate <- mkBoxUpdate u player _boxOpenedFirstTime openedFiveTimes
+    _boxUpdate <- mkBoxUpdate mp gc u player pic _boxOpenedFirstTime openedFiveTimes
 
     let box = Box{..}
 

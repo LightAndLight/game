@@ -12,6 +12,7 @@ import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Getter (view)
+import Control.Lens.Operators ((<&>))
 import Control.Lens.Review ((#))
 import Control.Lens.Setter (over, mapped)
 import Control.Monad.Fix (MonadFix)
@@ -73,10 +74,11 @@ game screenSize Assets{..} refresh input =
 
     ePostBuild <- getPostBuild
 
+
+
     ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
 
     let dPlayerQuadrants :: Dynamic t [Quadrant] = getQuadrants'' gc player
-
     player :: Player t <-
       mkPlayer
         mp
@@ -87,40 +89,48 @@ game screenSize Assets{..} refresh input =
         (Height 20)
         (V2 0 0)
 
-    dPlayer <-
-      holdDyn Map.empty $
-      (\u -> Map.singleton u player) <$> ePlayerCreated
+    let
+      ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
 
-    eCreateBox <-
-      fmap (\u -> Map.singleton u $ Just (V2 40 40)) <$>
-      requestUnique ePostBuild
+
+
+    eBoxUnique <- requestUnique ePostBuild
+    (_, eCreateBox) <-
+      runWithReplace
+        (pure ())
+        (eBoxUnique <&> \u -> mdo
+           let dBoxQuadrants = getQuadrants'' gc box
+           box <- mkBox
+             mp
+             gc
+             u
+             dBoxQuadrants
+             (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+             (Width 10)
+             (Height 10)
+             (V2 40 40)
+             player
+           pure $ Map.singleton u (Just box))
 
     let
-      eBoxesUpdated :: Event t (Map Unique (Maybe (V2 Float)))
+      eBoxesUpdated :: Event t (Map Unique (Maybe (Box t)))
       eBoxesUpdated =
         eCreateBox <>
         switchDyn (foldMap (view boxUpdate) <$> dBoxes)
 
     dBoxes :: Dynamic t (Map Unique (Box t)) <-
-      listHoldWithKey Map.empty eBoxesUpdated $ \u pos -> mdo
-        let dBoxQuadrants = getQuadrants'' gc box
-        box <-
-          mkBox
-            mp
-            u
-            dBoxQuadrants
-            (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-            (Width 10)
-            (Height 10)
-            pos
-            player
-        pure box
+      listHoldWithKey Map.empty eBoxesUpdated $ \_ -> pure
 
-    let
-      dEntities :: Dynamic t (Map Unique (Entity t))
-      dEntities =
-        over (mapped.mapped) (_Entity #) dBoxes <>
-        over (mapped.mapped) (_Entity #) dPlayer
+
+
+    dEntities :: Dynamic t (Map Unique (Entity t)) <-
+      listHoldWithKey
+        mempty
+        (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
+         over (mapped.mapped.mapped) (_Entity #) ePlayerUpdated)
+        (\_ -> pure)
+
+
 
     pure $
       fold

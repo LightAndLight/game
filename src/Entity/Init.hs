@@ -13,33 +13,19 @@ import RandomGen.Class (RandomGen, randomPosition)
 import Unique (Unique)
 import UniqueSupply.Class (UniqueSupply, withUnique)
 
-mkUniqueAndPos'
-  :: forall t m a
-   . ( MonadHold t m
-     , UniqueSupply t m, RandomGen t m
-     )
-  => Event t a
-  -> m (Event t (Map Unique (Maybe (V2 Float))))
-mkUniqueAndPos' eCreate = do
-  eRandomPos :: Event t (Float, Float) <-
-    randomPosition eCreate (0, 990) (0, 990)
-  withUnique
-    eCreate
-    (\u -> (\(x, y) -> Map.singleton u $ Just (V2 x y)) <$> eRandomPos)
-
 mkUniqueAndPos
   :: forall t m a
    . ( MonadHold t m
      , UniqueSupply t m, RandomGen t m
      )
   => Event t a
-  -> m (Event t (Map Unique (Maybe (V2 Float))))
+  -> m (Event t (Unique, V2 Float))
 mkUniqueAndPos eCreate = do
   eRandomPos :: Event t (Float, Float) <-
     randomPosition eCreate (0, 990) (0, 990)
   withUnique
     eCreate
-    (\u -> (\(x, y) -> Map.singleton u $ Just (V2 x y)) <$> eRandomPos)
+    (\u -> (\(x, y) -> (u, V2 x y)) <$> eRandomPos)
 
 mkUniqueAndPosNotOnPosition
   :: ( Reflex t, MonadHold t m, MonadFix m
@@ -48,7 +34,7 @@ mkUniqueAndPosNotOnPosition
      )
   => Dynamic t (V2 Float)
   -> Event t a
-  -> m (Event t (Map Unique (Maybe (V2 Float))))
+  -> m (Event t (Unique, V2 Float))
 mkUniqueAndPosNotOnPosition dPos eCreate = switchDyn <$> workflow w
   where
     w = Workflow $ do
@@ -56,7 +42,7 @@ mkUniqueAndPosNotOnPosition dPos eCreate = switchDyn <$> workflow w
       let
         eRetry =
           ffilter id
-          ((\a -> any $ maybe False (a ==)) <$>
+          ((\a -> (a ==) . snd) <$>
             current dPos <@>
             eRandomPos)
       pure (eRandomPos, w <$ eRetry)
