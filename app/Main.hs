@@ -9,7 +9,8 @@ module Main where
 import Reflex
 import Reflex.Workflow (Workflow(..), workflow)
 import Reflex.NotReady.Class (NotReady)
-import Reflex.Gloss (InputEvent, playReflex)
+import Reflex.Gloss (playReflex)
+import Reflex.Gloss.Event (GlossEvent)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Review ((#))
@@ -72,7 +73,7 @@ play
   => ScreenSize Float
   -> Assets
   -> Event t Float
-  -> Event t InputEvent
+  -> EventSelector t GlossEvent
   -> Workflow t m (Dynamic t Picture, Event t ())
 play screenSize Assets{..} refresh input =
   Workflow $ do

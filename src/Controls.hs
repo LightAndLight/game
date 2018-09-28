@@ -1,28 +1,30 @@
 {-# language RecordWildCards #-}
 module Controls where
 
-import Control.Monad.Fix (MonadFix)
-import Graphics.Gloss.Interface.IO.Game hiding (Event, Point)
 import Reflex
-  (Dynamic, Event, MonadHold, Reflex, holdUniqDyn, holdDyn, fforMaybe)
-import Reflex.Gloss (InputEvent)
+import Reflex.Gloss.Event
+  (GlossEvent(..), Key(..), KeyState(..), SpecialKey(..))
+import Control.Monad (void)
+import Control.Monad.Fix (MonadFix)
 
-charDown :: Reflex t => Char -> Event t InputEvent -> Event t Bool
-charDown c eIn =
-  fforMaybe eIn $
-  \e -> case e of
-    EventKey (Char c') dir _ _ | c == c' ->
-      case dir of
-        Down -> Just True
-        Up -> Just False
-    _ -> Nothing
+charDown
+  :: Reflex t
+  => Char
+  -> EventSelector t GlossEvent
+  -> Event t Bool
+charDown c input =
+  leftmost
+  [ True <$ select input (GE_Key (Just $ Char c) (Just Down) Nothing)
+  , False <$ select input (GE_Key (Just $ Char c) (Just Up) Nothing)
+  ]
 
-specialKeyPressed :: Reflex t => SpecialKey -> Event t InputEvent -> Event t ()
-specialKeyPressed sk eIn =
-  fforMaybe eIn $
-  \e -> case e of
-    EventKey (SpecialKey sk') Down _ _ | sk == sk' -> Just ()
-    _ -> Nothing
+specialKeyPressed
+  :: Reflex t
+  => SpecialKey
+  -> EventSelector t GlossEvent
+  -> Event t ()
+specialKeyPressed sk input =
+  void $ select input (GE_Key (Just $ SpecialKey sk) (Just Down) Nothing)
 
 data Controls t
   = Controls
@@ -38,14 +40,14 @@ data Controls t
 mkControls
   :: (MonadHold t m, Reflex t, MonadFix m)
   => Event t Float
-  -> Event t InputEvent
+  -> EventSelector t GlossEvent
   -> m (Controls t)
-mkControls _eRefresh eInput = do
-  _dWHeld <- holdUniqDyn =<< holdDyn False (charDown 'w' eInput)
-  _dSHeld <- holdUniqDyn =<< holdDyn False (charDown 's' eInput)
-  _dAHeld <- holdUniqDyn =<< holdDyn False (charDown 'a' eInput)
-  _dDHeld <- holdUniqDyn =<< holdDyn False (charDown 'd' eInput)
+mkControls _eRefresh input = do
+  _dWHeld <- holdUniqDyn =<< holdDyn False (charDown 'w' input)
+  _dSHeld <- holdUniqDyn =<< holdDyn False (charDown 's' input)
+  _dAHeld <- holdUniqDyn =<< holdDyn False (charDown 'a' input)
+  _dDHeld <- holdUniqDyn =<< holdDyn False (charDown 'd' input)
   let
-    _eSpacePressed = specialKeyPressed KeySpace eInput
-    _eEscPressed = specialKeyPressed KeyEsc eInput
+    _eSpacePressed = specialKeyPressed KeySpace input
+    _eEscPressed = specialKeyPressed KeyEsc input
   pure $ Controls{..}

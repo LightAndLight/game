@@ -24,8 +24,8 @@ reflex-platform.project ({ pkgs, ... }: {
     reflex-gloss = import (pkgs.fetchFromGitHub {
       owner = "lightandlight";
       repo = "reflex-gloss";
-      rev = "ec11dd09a7bd3f6c8f2c72f7b7c19900aadb44ae";
-      sha256 = "1w8ig8l9w40bw0kvwh5rhwn3fy0fggl1kn6la437v998xgmskh4h";
+      rev = "6c3b9ec218199cd684096fa35d1601e2ef234fa8";
+      sha256 = "13b42px5lxc4lqxm7sppfriz51k72rqvb75n4ygwnhzd3dzjvf3k";
     }) { inherit reflex-platform; };
   };
 })
