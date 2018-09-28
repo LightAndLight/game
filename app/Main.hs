@@ -61,60 +61,60 @@ game
   -> Event t Float
   -> Event t InputEvent
   -> m (Dynamic t Picture)
-game screenSize Assets{..} refresh input =
+game screenSize Assets{..} refresh input = do
   let
     mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
     gc = GridConfig 10 10 (Width 1000) (Height 1000)
-  in mdo
-    viewport <- mkViewport screenSize mp [EdgePan 100 player]
-    controls <- mkControls refresh input
 
-    ePostBuild <- getPostBuild
+  controls <- mkControls refresh input
 
-
-    ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
-
-    player :: Player t <-
-      mkPlayer
-        mp
-        gc
-        controls
-        _assetsPlayerPicture
-        (Width 20)
-        (Height 20)
-        (V2 0 0)
-
-    let
-      ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
+  ePostBuild <- getPostBuild
 
 
-    eInitialBox <-
-      initBox
-        ePostBuild
-        mp
-        gc
-        (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-        player
-        (Width 10)
-        (Height 10)
-        (V2 40 40)
+  ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
 
-    eBoxesUpdated :: Event t (Map Unique (Maybe (Box t))) <- initBoxes eInitialBox
+  player :: Player t <-
+    mkPlayer
+      mp
+      gc
+      controls
+      _assetsPlayerPicture
+      (Width 20)
+      (Height 20)
+      (V2 0 0)
 
-
-    dEntities :: Dynamic t (Map Unique (Entity t)) <-
-      listHoldWithKey
-        mempty
-        (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
-         over (mapped.mapped.mapped) (_Entity #) ePlayerUpdated)
-        (\_ -> pure)
+  let
+    ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
 
 
-    pure $
-      fold
-      [ renderedMap viewport mp
-      , render viewport dEntities
-      ]
+  eInitialBox <-
+    initBox
+      ePostBuild
+      mp
+      gc
+      (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+      player
+      (Width 10)
+      (Height 10)
+      (V2 40 40)
+
+  eBoxesUpdated :: Event t (Map Unique (Maybe (Box t))) <- initBoxes eInitialBox
+
+
+  dEntities :: Dynamic t (Map Unique (Entity t)) <-
+    listHoldWithKey
+      mempty
+      (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
+        over (mapped.mapped.mapped) (_Entity #) ePlayerUpdated)
+      (\_ -> pure)
+
+  viewport <- mkViewport screenSize mp [EdgePan 100 player]
+
+  pure $
+    fold
+    [ renderedMap viewport mp
+    , render viewport dEntities
+    ]
 
 main :: IO ()
 main = do
