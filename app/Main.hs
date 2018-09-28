@@ -28,7 +28,7 @@ import qualified Data.Map as Map
 
 import Box (Box(..), initBox, initBoxes)
 import Chaser (Chaser(..), mkChaser)
-import Controls (mkControls)
+import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (Entity, _Entity)
 import Grid (GridConfig(..))
@@ -56,10 +56,11 @@ data Assets
 caught
   :: forall t m
    . (Reflex t, MonadHold t m, MonadFix m)
-  => Workflow t m (Dynamic t Picture)
-caught =
+  => Controls t
+  -> Workflow t m (Dynamic t Picture, Event t ())
+caught Controls{..} =
   Workflow $
-    pure (pure $ translate (-200) 0 $ text "caught!", never)
+    pure ((pure $ translate (-200) 0 $ text "caught!", _eEscPressed), never)
 
 play
   :: forall t m
@@ -72,7 +73,7 @@ play
   -> Assets
   -> Event t Float
   -> Event t InputEvent
-  -> Workflow t m (Dynamic t Picture)
+  -> Workflow t m (Dynamic t Picture, Event t ())
 play screenSize Assets{..} refresh input =
   Workflow $ do
     let
@@ -140,7 +141,7 @@ play screenSize Assets{..} refresh input =
         , render viewport dEntities
         ]
 
-    pure (dPicture, caught <$ _chaserCaughtPlayer chaser)
+    pure ((dPicture, never), caught controls <$ _chaserCaughtPlayer chaser)
 
 main :: IO ()
 main = do
@@ -178,6 +179,6 @@ main = do
     30
     (\er ei ->
        runRandomGenT stg $
-       runUniqueSupplyT sup $
-       fmap join . workflow $
-       play (fromIntegral <$> screenSize) Assets{..} er ei)
+       runUniqueSupplyT sup $ do
+         dOutput <- workflow $ play (fromIntegral <$> screenSize) Assets{..} er ei
+         pure (dOutput >>= fst, switchDyn $ snd <$> dOutput))

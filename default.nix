@@ -20,11 +20,12 @@ reflex-platform.project ({ pkgs, ... }: {
       rev = "a4b188267994f2d0dcef7c9bb5da12c881d4d15d";
       sha256 = "0kaccv1fljw045r582zaql3qms98ym30r756cmq1hq7lh8ijzd2d";
     }) { inherit reflex-platform; };
+    # reflex-gloss = import ../reflex-gloss { inherit reflex-platform; };
     reflex-gloss = import (pkgs.fetchFromGitHub {
       owner = "lightandlight";
       repo = "reflex-gloss";
-      rev = "afec5e3bdcd4b58bc68d15bae926368197fe0c58";
-      sha256 = "04i59fzal49pp32dwbwc6nwzslkp0p8sn6jrmq1j1shsrldwrjkf";
+      rev = "ec11dd09a7bd3f6c8f2c72f7b7c19900aadb44ae";
+      sha256 = "1w8ig8l9w40bw0kvwh5rhwn3fy0fggl1kn6la437v998xgmskh4h";
     }) { inherit reflex-platform; };
   };
 })

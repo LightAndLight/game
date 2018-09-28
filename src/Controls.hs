@@ -31,6 +31,7 @@ data Controls t
   , _dAHeld :: Dynamic t Bool
   , _dDHeld :: Dynamic t Bool
   , _eSpacePressed :: Event t ()
+  , _eEscPressed :: Event t ()
   , _eRefresh :: Event t Float
   }
 
@@ -44,5 +45,7 @@ mkControls _eRefresh eInput = do
   _dSHeld <- holdUniqDyn =<< holdDyn False (charDown 's' eInput)
   _dAHeld <- holdUniqDyn =<< holdDyn False (charDown 'a' eInput)
   _dDHeld <- holdUniqDyn =<< holdDyn False (charDown 'd' eInput)
-  let _eSpacePressed = specialKeyPressed KeySpace eInput
+  let
+    _eSpacePressed = specialKeyPressed KeySpace eInput
+    _eEscPressed = specialKeyPressed KeyEsc eInput
   pure $ Controls{..}
