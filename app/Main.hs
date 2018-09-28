@@ -7,17 +7,19 @@
 module Main where
 
 import Reflex
+import Reflex.Workflow (Workflow(..), workflow)
 import Reflex.NotReady.Class (NotReady)
 import Reflex.Gloss (InputEvent, playReflex)
 
 import Control.Concurrent.Supply (newSupply)
 import Control.Lens.Review ((#))
 import Control.Lens.Setter (over, mapped)
+import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
 import Data.Foldable (fold)
 import Data.Map (Map)
 import Data.Semigroup ((<>))
-import Graphics.Gloss (Display(..), Picture, white)
+import Graphics.Gloss (Display(..), Picture, white, text, translate)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
@@ -25,6 +27,7 @@ import Linear.V2 (V2(..))
 import qualified Data.Map as Map
 
 import Box (Box(..), initBox, initBoxes)
+import Chaser (Chaser(..), mkChaser)
 import Controls (mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (Entity, _Entity)
@@ -44,12 +47,21 @@ import qualified Map as Game
 data Assets
   = Assets
   { _assetsPlayerPicture :: Picture
+  , _assetsChaserPicture :: Picture
   , _assetsMapPicture :: Picture
   , _assetsBoxClosedPicture :: Picture
   , _assetsBoxOpenPicture :: Picture
   }
 
-game
+caught
+  :: forall t m
+   . (Reflex t, MonadHold t m, MonadFix m)
+  => Workflow t m (Dynamic t Picture)
+caught =
+  Workflow $
+    pure (pure $ translate (-200) 0 $ text "caught!", never)
+
+play
   :: forall t m
    . ( Reflex t, MonadHold t m, MonadFix m
      , PostBuild t m, Adjustable t m
@@ -60,67 +72,85 @@ game
   -> Assets
   -> Event t Float
   -> Event t InputEvent
-  -> m (Dynamic t Picture)
-game screenSize Assets{..} refresh input = do
-  let
-    mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
-    gc = GridConfig 10 10 (Width 1000) (Height 1000)
+  -> Workflow t m (Dynamic t Picture)
+play screenSize Assets{..} refresh input =
+  Workflow $ do
+    let
+      mp = Game.Map _assetsMapPicture (Width 1000) (Height 1000)
+      gc = GridConfig 10 10 (Width 1000) (Height 1000)
 
-  controls <- mkControls refresh input
+    controls <- mkControls refresh input
 
-  ePostBuild <- getPostBuild
-
-
-  ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
-
-  player :: Player t <-
-    mkPlayer
-      mp
-      gc
-      controls
-      _assetsPlayerPicture
-      (Width 20)
-      (Height 20)
-      (V2 0 0)
-
-  let
-    ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
+    ePostBuild <- getPostBuild
 
 
-  eInitialBox <-
-    initBox
-      ePostBuild
-      mp
-      gc
-      (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
-      player
-      (Width 10)
-      (Height 10)
-      (V2 40 40)
+    ePlayerCreated :: Event t Unique <- requestUnique ePostBuild
+    player :: Player t <-
+      mkPlayer
+        mp
+        gc
+        controls
+        _assetsPlayerPicture
+        (Width 20)
+        (Height 20)
+        (V2 0 0)
+    let ePlayerUpdated = (\u -> Map.singleton u $ Just player) <$> ePlayerCreated
 
-  eBoxesUpdated :: Event t (Map Unique (Maybe (Box t))) <- initBoxes eInitialBox
+    eChaserCreated :: Event t Unique <- requestUnique ePostBuild
+    chaser :: Chaser t <-
+      mkChaser
+        mp
+        gc
+        controls
+        _assetsChaserPicture
+        (Width 17)
+        (Height 17)
+        (V2 300 300)
+        player
+    let eChaserUpdated = (\u -> Map.singleton u $ Just chaser) <$> eChaserCreated
 
 
-  dEntities :: Dynamic t (Map Unique (Entity t)) <-
-    listHoldWithKey
-      mempty
-      (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
+    eInitialBox <-
+      initBox
+        ePostBuild
+        mp
+        gc
+        (_assetsBoxOpenPicture, _assetsBoxClosedPicture)
+        player
+        (Width 10)
+        (Height 10)
+        (V2 40 40)
+    eBoxesUpdated :: Event t (Map Unique (Maybe (Box t))) <- initBoxes eInitialBox
+
+
+    dEntities :: Dynamic t (Map Unique (Entity t)) <-
+      listHoldWithKey
+        mempty
+        (over (mapped.mapped.mapped) (_Entity #) eBoxesUpdated <>
+        over (mapped.mapped.mapped) (_Entity #) eChaserUpdated <>
         over (mapped.mapped.mapped) (_Entity #) ePlayerUpdated)
-      (\_ -> pure)
+        (\_ -> pure)
 
-  viewport <- mkViewport screenSize mp [EdgePan 100 player]
+    viewport <- mkViewport screenSize mp [EdgePan 100 player]
 
-  pure $
-    fold
-    [ renderedMap viewport mp
-    , render viewport dEntities
-    ]
+    let
+      dPicture =
+        fold
+        [ renderedMap viewport mp
+        , render viewport dEntities
+        ]
+
+    pure (dPicture, caught <$ _chaserCaughtPlayer chaser)
 
 main :: IO ()
 main = do
   _assetsPlayerPicture <-
     maybe (error "couldn't load dude") pure =<<
     loadJuicyPNG "assets/dude.png"
+
+  _assetsChaserPicture <-
+    maybe (error "couldn't load dude") pure =<<
+    loadJuicyPNG "assets/chaser.png"
 
   _assetsMapPicture <-
     maybe (error "couldn't load map") pure =<<
@@ -149,4 +179,5 @@ main = do
     (\er ei ->
        runRandomGenT stg $
        runUniqueSupplyT sup $
-       game (fromIntegral <$> screenSize) Assets{..} er ei)
+       fmap join . workflow $
+       play (fromIntegral <$> screenSize) Assets{..} er ei)

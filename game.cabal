@@ -36,6 +36,7 @@ executable game
 library
   exposed-modules:       Unique
                        , Box
+                       , Chaser
                        , Dimensions
                        , Entity
                        , Entity.Init

@@ -2,17 +2,19 @@
 {-# language FlexibleInstances, MultiParamTypeClasses #-}
 {-# language RecursiveDo #-}
 {-# language RecordWildCards #-}
+{-# language ScopedTypeVariables #-}
 {-# language TemplateHaskell #-}
 {-# language TupleSections #-}
 module Player where
 
 import Reflex
 
-import Control.Lens.Getter ((^.))
+import Control.Lens.Getter (view)
 import Control.Lens.TH (makeLenses)
 import Control.Monad.Fix (MonadFix)
 import Graphics.Gloss (Picture)
-import Linear.V2 (V2, _x, _y)
+import Linear.Metric (normalize)
+import Linear.V2 (V2(..), _x, _y)
 
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
@@ -41,7 +43,8 @@ instance HasWidth (Player t) where; width = playerWidth
 instance HasHeight (Player t) where; height = playerHeight
 
 mkPlayerPos
-  :: (Reflex t, MonadHold t m, MonadFix m)
+  :: forall t m
+   . (Reflex t, MonadHold t m, MonadFix m)
   => Map
   -> Controls t
   -> Width Float
@@ -50,17 +53,20 @@ mkPlayerPos
   -> m (Dynamic t (V2 Float))
 mkPlayerPos mp Controls{..} w h pos = mdo
   let
-    eX =
-      (.) <$>
-      ((\b n -> if b then n+5 else n) <$> current _dDHeld) <*>
-      ((\b n -> if b then n-5 else n) <$> current _dAHeld) <@>
-      ((^. _x) <$> current dPlayerPos <@ _eRefresh)
+    dNewPos :: Dynamic t (V2 Float)
+    dNewPos =
+      (+) <$>
+      dPlayerPos <*>
+      (fmap ((*5) . normalize . sum) $
+       sequence
+       [ (\b -> if b then V2 1 0 else 0) <$> _dDHeld
+       , (\b -> if b then V2 (-1) 0 else 0) <$> _dAHeld
+       , (\b -> if b then V2 0 (-1) else 0) <$> _dWHeld
+       , (\b -> if b then V2 0 1 else 0) <$> _dSHeld
+       ])
 
-    eY =
-      (.) <$>
-      ((\b n -> if b then n+5 else n) <$> current _dSHeld) <*>
-      ((\b n -> if b then n-5 else n) <$> current _dWHeld) <@>
-      ((^. _y) <$> current dPlayerPos <@ _eRefresh)
+    eX = view _x <$> current dNewPos <@ _eRefresh
+    eY = view _y <$> current dNewPos <@ _eRefresh
 
   dPlayerPos <- mkEntityPosition mp w h pos eX eY
 
