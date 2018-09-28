@@ -23,9 +23,9 @@ renderedEntity
 renderedEntity Viewport{..} a =
   (\vPos ePos ePic ->
       if
-        vPos^._x <= ePos^._x &&
+        vPos^._x <= (ePos^._x + unWidth (a^.width)) &&
         ePos^._x <= (vPos^._x + unWidth _vpWidth) &&
-        vPos^._y <= ePos^._y &&
+        vPos^._y <= (ePos^._y + unHeight (a^.height)) &&
         ePos^._y <= (vPos^._y + unHeight _vpHeight)
       then
         translate
