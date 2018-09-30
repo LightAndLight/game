@@ -37,15 +37,27 @@ data Letters
   , lettersLetters :: [Letter]
   }
 
+-- | drawn centered, like the rest of the items in gloss
 drawString :: Font -> String -> Picture
 drawString font = drawLetters . toLetters font
 
+-- | drawn centered, like the rest of the items in gloss
 drawChar :: Font -> Char -> Picture
 drawChar font = letterPicture . getLetter font
 
+-- | drawn centered, like the rest of the items in gloss
 drawLetters :: Letters -> Picture
-drawLetters = go 0 . lettersLetters
+drawLetters letters =
+  translate
+    (-(fromIntegral (lettersWidth letters) / 2) + (c1w / 2))
+    (fromIntegral (lettersHeight letters) / 2 - (c1h / 2)) $
+  go 0 (lettersLetters letters)
   where
+    (c1w, c1h) =
+      case lettersLetters letters of
+        [] -> (0, 0)
+        h:_ -> (fromIntegral $ letterWidth h, fromIntegral $ letterHeight h)
+
     go !_ [] = blank
     go !n (l:ls) =
       translate n 0 (letterPicture l) <>
