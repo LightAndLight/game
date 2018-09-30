@@ -14,6 +14,7 @@ reflex-platform.project ({ pkgs, ... }: {
     gloss-rendering = self.callPackage (import ./nix/gloss-rendering.nix) {};
     gloss = self.callPackage (import ./nix/gloss.nix) {};
     gloss-juicy = self.callPackage (import ./nix/gloss-juicy.nix) {};
+    JuicyPixels-extra = self.callHackage "JuicyPixels-extra" "0.3.0" {};
     reflex-basic-host = import (pkgs.fetchFromGitHub {
       owner = "dalaing";
       repo = "reflex-basic-host";
