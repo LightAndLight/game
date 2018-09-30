@@ -32,6 +32,7 @@ import Chaser (Chaser(..), mkChaser)
 import Controls (Controls(..), mkControls)
 import Dimensions (Width(..), Height(..))
 import Entity (Entity, _Entity)
+import Font (Font, loadFont, drawString)
 import Grid (GridConfig(..))
 import Player (Player(..), mkPlayer)
 import RandomGen.Base (runRandomGenT)
@@ -52,16 +53,23 @@ data Assets
   , _assetsMapPicture :: Picture
   , _assetsBoxClosedPicture :: Picture
   , _assetsBoxOpenPicture :: Picture
+  , _assetsFont :: Font
   }
 
 caught
   :: forall t m
    . (Reflex t, MonadHold t m, MonadFix m)
-  => Controls t
+  => Font
+  -> Controls t
   -> Workflow t m (Dynamic t Picture, Event t ())
-caught Controls{..} =
+caught font Controls{..} =
   Workflow $
-    pure ((pure $ scale 0.15 0.15 $ translate (-200) 0 $ text "caught!", _eEscPressed), never)
+    pure
+      ( ( pure $ drawString font "caught!"
+        , _eEscPressed
+        )
+      , never
+      )
 
 play
   :: forall t m
@@ -142,7 +150,11 @@ play screenSize Assets{..} refresh input =
         , render viewport dEntities
         ]
 
-    pure ((dPicture, never), caught controls <$ _chaserCaughtPlayer chaser)
+    pure
+      ( (dPicture, never)
+      , caught _assetsFont controls <$
+        _chaserCaughtPlayer chaser
+      )
 
 main :: IO ()
 main = do
@@ -165,6 +177,8 @@ main = do
   _assetsBoxOpenPicture <-
     maybe (error "couldn't load box_open") pure =<<
     loadJuicyPNG "assets/box_open.png"
+
+  _assetsFont <- loadFont "assets/fonts/hack-14x25.png" 14 25
 
   let
     screenWidth = 600
