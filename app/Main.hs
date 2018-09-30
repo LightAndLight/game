@@ -20,7 +20,7 @@ import Control.Monad.Fix (MonadFix)
 import Data.Foldable (fold)
 import Data.Map (Map)
 import Data.Semigroup ((<>))
-import Graphics.Gloss (Display(..), Picture, white, text, translate)
+import Graphics.Gloss (Display(..), Picture, white, text, translate, scale)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
@@ -61,7 +61,7 @@ caught
   -> Workflow t m (Dynamic t Picture, Event t ())
 caught Controls{..} =
   Workflow $
-    pure ((pure $ translate (-200) 0 $ text "caught!", _eEscPressed), never)
+    pure ((pure $ scale 0.15 0.15 $ translate (-200) 0 $ text "caught!", _eEscPressed), never)
 
 play
   :: forall t m
