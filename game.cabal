@@ -48,6 +48,7 @@ library
                        , Grid
                        , Grid.Quadrant
                        , Map
+                       , UI
                        , Viewport
                        , Controls
                        , Player
@@ -76,12 +77,3 @@ library
                      , containers
   hs-source-dirs:      src
   default-language:    Haskell2010
-
-test-suite game-tests
-  type:                exitcode-stdio-1.0
-  build-depends:       base <5
-                     , game
-                     , hspec >=2.4 && <2.6
-                     , intervals >=0.8 && <0.9
-  hs-source-dirs:      tests
-  main-is:             Main.hs

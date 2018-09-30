@@ -1,91 +1,206 @@
+{-# language ConstraintKinds #-}
 {-# language FlexibleContexts #-}
+{-# language FlexibleInstances #-}
 {-# language FunctionalDependencies, MultiParamTypeClasses #-}
+{-# language RecordWildCards #-}
+{-# language ScopedTypeVariables #-}
 {-# language TemplateHaskell #-}
-{-# language TypeFamilies #-}
+{-# language UndecidableInstances #-}
 module UI where
 
 import Reflex
-import Reflex.Gloss.Event (GlossEvent)
+import Reflex.Gloss.Event
+  (GlossEvent(..), Key(..), MouseButton(..), KeyState(..))
+import Control.Lens.Getter ((^.), view)
 import Control.Lens.Setter ((.~))
 import Control.Lens.TH (makeLenses)
-import Graphics.Gloss (Picture, blank, text, scale)
-import Linear.V3 (V3(..))
-import Linear.Vector ((*^))
+import Control.Lens.Tuple (_1, _2, _3)
+import Control.Monad (join, void)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Reader (MonadReader, ask)
+import Data.Function ((&))
+import Data.Semigroup ((<>))
+import Graphics.Gloss (Picture, blank, color, polygon, lineLoop, translate)
+import Graphics.Gloss.Data.Color (greyN)
+import Linear.V3 (V3(..), _x, _y)
 
 import Dimensions (Width(..), Height(..))
+import Font (Font, drawLetters, toLetters, lettersWidth, lettersHeight)
+import Viewport (Viewport(..))
 
-data Element t n
+data Element t
   = Element
-  { _elPosition :: V3 n
-  , _elWidth :: Width n
-  , _elHeight :: Height n
+  { _elPosition :: Dynamic t (V3 Float)
+  , _elWidth :: Width Float
+  , _elHeight :: Height Float
   , _elPicture :: Dynamic t Picture
+  , _elMouseInside :: Dynamic t Bool
   }
 makeLenses ''Element
 
--- |
--- a basis for the R^3 vector space
---
--- origin = 0, 0, 0 = top left of screen
---
--- +x is to the right
--- +y is down
--- +z is into the screen
-data Direction
-  = Above
-  | Below
-  | LeftOf
-  | RightOf
-  | Behind
-  | InFrontOf
-  deriving (Eq, Show)
+renderElement
+  :: Reflex t
+  => Viewport t
+  -> Element t
+  -> Dynamic t Picture
+renderElement Viewport{..} el =
+  (\pos ->
+     translate
+       (pos^._x - (unWidth _vpWidth / 2))
+       (-pos^._y + (unHeight _vpHeight / 2))) <$>
+  _elPosition el <*>
+  _elPicture el
 
-origin :: (Reflex t, Num n) => Element t n
-origin = Element (V3 0 0 0) (Width 0) (Height 0) (pure blank)
+origin :: Reflex t => Element t
+origin =
+  Element (pure 0) (Width 0) (Height 0) (pure blank) (pure False)
 
-toBasis :: Num n => Direction -> V3 n
-toBasis Above = V3 0 (-1) 0
-toBasis Below = V3 0 1 0
-toBasis LeftOf = V3 (-1) 0 0
-toBasis RightOf = V3 1 0 0
-toBasis Behind = V3 0 0 1
-toBasis InFrontOf = V3 0 0 (-1)
+class
+  ( Reflex t
+  , MonadReader (EventSelector t GlossEvent, Font, Viewport t) m
+  ) =>
+  UIBuilder t m where
 
-class Num (Field a) => Positioned a where
-  type Field a
-  absolute :: V3 (Field a) -> a -> a
+instance
+  ( Reflex t
+  , MonadReader (EventSelector t GlossEvent, Font, Viewport t) m
+  ) =>
+  UIBuilder t m where
 
-relative
-  :: Positioned a
-  => (Field a, Direction)
-  -> V3 (Field a)
-  -> a
-  -> a
-relative (n, dir) pos f = absolute (pos + v) f
+askInputs :: UIBuilder t m => m (EventSelector t GlossEvent)
+askInputs = view _1 <$> ask
+
+askFont :: UIBuilder t m => m Font
+askFont = view _2 <$> ask
+
+askViewport :: UIBuilder t m => m (Viewport t)
+askViewport = view _3 <$> ask
+
+text
+  :: forall t m
+   . (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Dynamic t (V3 Float)
+  -> String
+  -> m (Element t)
+text dPos str = do
+  font <- askFont
+  let
+    ls = toLetters font str
+    lsW = fromIntegral $ lettersWidth ls
+    lsH = fromIntegral $ lettersHeight ls
+    w = Width lsW
+    h = Height lsH
+  dMouseInside <- mouseInside dPos w h
+  pure $ 
+    Element
+    { _elPosition = dPos
+    , _elWidth = w
+    , _elHeight = h
+    , _elPicture = pure $ translate (lsW / 2) (-lsH / 2) (drawLetters ls)
+    , _elMouseInside = dMouseInside
+    }
+
+bordered
+  :: Reflex t
+  => Element t
+  -> Element t
+bordered el =
+    el &
+    elPicture .~
+      ((\pic ->
+          pic <>
+          lineLoop [(0, 0), (w, 0), (w, -h), (0, -h)]) <$>
+      _elPicture el)
   where
-    v = n *^ toBasis dir
+    w = unWidth $ _elWidth el
+    h = unHeight $ _elHeight el
 
-instance Num n => Positioned (Element t n) where
-  type Field (Element t n) = n
+mouseInside
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Dynamic t (V3 Float)
+  -> Width Float
+  -> Height Float
+  -> m (Dynamic t Bool)
+mouseInside dPosition w h = do
+  events <- askInputs
+  Viewport{..} <- askViewport
+  let
+    eMove =
+      (\(x, y) -> (x + (unWidth _vpWidth/2), -y + (unHeight _vpHeight/2))) <$>
+      select events GE_Motion
+  holdUniqDyn =<<
+    holdDyn
+      False
+      ((\(V3 elx ely _) (cx, cy) ->
+        elx <= cx && cx < elx + unWidth w &&
+        ely <= cy && cy < ely + unHeight h) <$>
+      current dPosition <@>
+      eMove)
 
-  absolute p = elPosition .~ p
+clicked
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Element t
+  -> m (Event t ())
+clicked el = do
+  events <- askInputs
+  let
+    eClick =
+      select events $
+      GE_Key (Just $ MouseButton LeftButton) (Just Down) Nothing
+  pure . void $ ffilter id (current (_elMouseInside el) <@ eClick)
 
-class UIBuilder t m | m -> t where
-  askEvents :: m (EventSelector t GlossEvent)
-  tellElement :: Element t Float -> m ()
+mouseEntered
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Element t
+  -> m (Event t ())
+mouseEntered el = do
+  let
+    dInElement = _elMouseInside el
+    eEntered =
+      attachWithMaybe
+        (\x y -> if not x && y then Just () else Nothing)
+        (current dInElement)
+        (updated dInElement)
+  pure eEntered
 
-data GlossText
-  = GlossText
-  { _gtSize :: Float
-  , _gtValue :: String
-  }
+mouseLeft
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Element t
+  -> m (Event t ())
+mouseLeft el = do
+  let
+    dInElement = _elMouseInside el
+    eLeft =
+      attachWithMaybe
+        (\x y -> if x && not y then Just () else Nothing)
+        (current dInElement)
+        (updated dInElement)
+  pure eLeft
 
-glossText :: String -> GlossText
-glossText = GlossText 1.0
-
-glossTextPicture :: GlossText -> Picture
-glossTextPicture (GlossText sz val) =
-  scale (0.15 * sz) (0.15 * sz) $ text val
-
-button :: UIBuilder t m => String -> m (Event t ())
-button msg = undefined
+button
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => Dynamic t (V3 Float)
+  -> String
+  -> m (Event t (), Element t)
+button dPosition msg = do
+  el <- bordered <$> text dPosition msg
+  eEntered <- mouseEntered el
+  eLeft <- mouseLeft el
+  eClicked <- clicked el
+  let
+    w = unWidth $ _elWidth el
+    h = unHeight $ _elHeight el
+    dPictureUnhighlighed = _elPicture el
+    dPictureHighlighed =
+      (color
+         (greyN 0.7)
+         (polygon [(0, 0), (w, 0), (w, -h), (0, -h)]) <>) <$> _elPicture el
+  dPicture <-
+    join <$>
+    holdDyn
+      dPictureUnhighlighed
+      (leftmost
+       [ dPictureHighlighed <$ eEntered
+       , dPictureUnhighlighed <$ eLeft
+       ])
+  pure (eClicked, el & elPicture .~ dPicture)

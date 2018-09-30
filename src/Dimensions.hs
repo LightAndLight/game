@@ -1,7 +1,10 @@
 {-# language RoleAnnotations #-}
+{-# language TemplateHaskell #-}
+{-# language FlexibleInstances, MultiParamTypeClasses, TypeFamilies #-}
 module Dimensions where
 
 import Control.Lens.Lens (Lens')
+import Control.Lens.TH (makeWrapped)
 
 newtype Width a = Width { unWidth :: a }
   deriving (Eq, Show)
@@ -16,3 +19,6 @@ class HasWidth e where
 
 class HasHeight e where
   height :: Lens' e (Height Float)
+
+makeWrapped ''Width
+makeWrapped ''Height

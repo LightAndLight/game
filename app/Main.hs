@@ -17,6 +17,7 @@ import Control.Lens.Review ((#))
 import Control.Lens.Setter (over, mapped)
 import Control.Monad (join)
 import Control.Monad.Fix (MonadFix)
+import Control.Monad.Reader (runReaderT)
 import Data.Foldable (fold)
 import Data.Map (Map)
 import Data.Semigroup ((<>))
@@ -24,6 +25,7 @@ import Graphics.Gloss (Display(..), Picture, white, text, translate, scale)
 import Graphics.Gloss.Juicy (loadJuicyPNG)
 import System.Random (getStdGen)
 import Linear.V2 (V2(..))
+import Linear.V3 (V3(..))
 
 import qualified Data.Map as Map
 
@@ -39,10 +41,11 @@ import RandomGen.Base (runRandomGenT)
 import RandomGen.Class (RandomGen)
 import Render (render)
 import Render.Map (renderedMap)
+import UI (renderElement, button)
 import Unique (Unique)
 import UniqueSupply.Base (runUniqueSupplyT)
 import UniqueSupply.Class (UniqueSupply(..))
-import Viewport (ScreenSize(..), mkViewport, ViewportConfig(..))
+import Viewport (Viewport, ScreenSize(..), mkViewport, ViewportConfig(..))
 
 import qualified Map as Game
 
@@ -59,14 +62,20 @@ data Assets
 caught
   :: forall t m
    . (Reflex t, MonadHold t m, MonadFix m)
-  => Font
+  => EventSelector t GlossEvent
+  -> Viewport t
+  -> Font
   -> Controls t
   -> Workflow t m (Dynamic t Picture, Event t ())
-caught font Controls{..} =
-  Workflow $
+caught inputs vp font Controls{..} =
+  Workflow $ do
+    (eClick, el) <-
+      runReaderT
+        (button (pure (V3 10 10 0)) "quit")
+        (inputs, font, vp)
     pure
-      ( ( pure $ drawString font "caught!"
-        , _eEscPressed
+      ( ( renderElement vp el <> pure (drawString font "caught!")
+        , eClick <> _eEscPressed
         )
       , never
       )
@@ -152,7 +161,7 @@ play screenSize Assets{..} refresh input =
 
     pure
       ( (dPicture, never)
-      , caught _assetsFont controls <$
+      , caught input viewport _assetsFont controls <$
         _chaserCaughtPlayer chaser
       )
 
