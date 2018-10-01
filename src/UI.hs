@@ -12,9 +12,10 @@ import Reflex
 import Reflex.Gloss.Event
   (GlossEvent(..), Key(..), MouseButton(..), KeyState(..))
 import Control.Lens.Getter ((^.), view)
-import Control.Lens.Setter ((.~))
+import Control.Lens.Setter ((.~), (-~), (+~), (%~), mapped)
 import Control.Lens.TH (makeLenses)
 import Control.Lens.Tuple (_1, _2, _3)
+import Control.Lens.Wrapped (_Wrapped)
 import Control.Monad (join, void)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.Reader (MonadReader, ask)
@@ -100,16 +101,46 @@ text dPos str = do
     , _elMouseInside = dMouseInside
     }
 
+margin
+  :: Reflex t
+  => Float -- ^ top margin
+  -> Float -- ^ bottom margin
+  -> Float -- ^ left margin
+  -> Float -- ^ right margin
+  -> Element t
+  -> Element t
+margin t b l r el =
+  el &
+    elPosition.mapped._x -~ l &
+    elPosition.mapped._y -~ t &
+    elWidth._Wrapped +~ (l+r) &
+    elHeight._Wrapped +~ (t+b) &
+    elPicture.mapped %~ translate l (-t)
+
 bordered
   :: Reflex t
-  => Element t
+  => Float -- ^ border thickness
   -> Element t
-bordered el =
-    el &
+  -> Element t
+bordered thickness el =
+  el &
+    elPosition.mapped._x -~ thickness &
+    elPosition.mapped._y -~ thickness &
+    elWidth._Wrapped +~ (2*thickness) &
+    elHeight._Wrapped +~ (2*thickness) &
     elPicture .~
       ((\pic ->
+          translate thickness (-thickness) $
           pic <>
-          lineLoop [(0, 0), (w, 0), (w, -h), (0, -h)]) <$>
+          foldMap
+            (\n ->
+                lineLoop
+                [ (n - thickness, -n + thickness)
+                , (-n + w + thickness, -n + thickness)
+                , (-n + w + thickness, n - h - thickness)
+                , (n - thickness, n - h - thickness)
+                ])
+            [0..thickness-1]) <$>
       _elPicture el)
   where
     w = unWidth $ _elWidth el
@@ -183,7 +214,7 @@ button
   -> String
   -> m (Event t (), Element t)
 button dPosition msg = do
-  el <- bordered <$> text dPosition msg
+  el <- bordered 2 . margin 5 5 5 5 <$> text dPosition msg
   eEntered <- mouseEntered el
   eLeft <- mouseLeft el
   eClicked <- clicked el
