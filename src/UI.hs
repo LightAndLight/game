@@ -39,6 +39,20 @@ data Element t
   }
 makeLenses ''Element
 
+data RElement t
+  = RElement
+  { _relWidth :: Width Float
+  , _relHeight :: Height Float
+  , _relPicture :: Dynamic t Picture
+  , _relMouseInside
+    :: Dynamic t (V3 Float -> Width Float -> Height Float -> Bool)
+  }
+makeLenses ''RElement
+
+toElement :: Reflex t => Dynamic t (V3 Float) -> RElement t -> Element t
+toElement dPos (RElement w h p mi) =
+  Element dPos w h p $ mi <*> dPos <*> pure w <*> pure h
+
 renderElement
   :: Reflex t
   => Viewport t
@@ -77,13 +91,29 @@ askFont = view _2 <$> ask
 askViewport :: UIBuilder t m => m (Viewport t)
 askViewport = view _3 <$> ask
 
+mouseInside
+  :: (MonadHold t m, MonadFix m, UIBuilder t m)
+  => m (Dynamic t (V3 Float -> Width Float -> Height Float -> Bool))
+mouseInside = do
+  events <- askInputs
+  Viewport{..} <- askViewport
+  let
+    eMove =
+      (\(x, y) -> (x + (unWidth _vpWidth/2), -y + (unHeight _vpHeight/2))) <$>
+      select events GE_Motion
+  holdDyn
+    (\_ _ _ -> False)
+    ((\(cx, cy) (V3 elx ely _) w h ->
+      elx <= cx && cx < elx + unWidth w &&
+      ely <= cy && cy < ely + unHeight h) <$>
+    eMove)
+
 text
   :: forall t m
    . (MonadHold t m, MonadFix m, UIBuilder t m)
-  => Dynamic t (V3 Float)
-  -> String
-  -> m (Element t)
-text dPos str = do
+  => String
+  -> m (RElement t)
+text str = do
   font <- askFont
   let
     ls = toLetters font str
@@ -91,14 +121,13 @@ text dPos str = do
     lsH = fromIntegral $ lettersHeight ls
     w = Width lsW
     h = Height lsH
-  dMouseInside <- mouseInside dPos w h
+  dMouseInside <- mouseInside
   pure $ 
-    Element
-    { _elPosition = dPos
-    , _elWidth = w
-    , _elHeight = h
-    , _elPicture = pure $ translate (lsW / 2) (-lsH / 2) (drawLetters ls)
-    , _elMouseInside = dMouseInside
+    RElement
+    { _relWidth = w
+    , _relHeight = h
+    , _relPicture = pure $ translate (lsW / 2) (-lsH / 2) (drawLetters ls)
+    , _relMouseInside = dMouseInside
     }
 
 margin
@@ -107,28 +136,24 @@ margin
   -> Float -- ^ bottom margin
   -> Float -- ^ left margin
   -> Float -- ^ right margin
-  -> Element t
-  -> Element t
+  -> RElement t
+  -> RElement t
 margin t b l r el =
   el &
-    elPosition.mapped._x -~ l &
-    elPosition.mapped._y -~ t &
-    elWidth._Wrapped +~ (l+r) &
-    elHeight._Wrapped +~ (t+b) &
-    elPicture.mapped %~ translate l (-t)
+    relWidth._Wrapped +~ (l+r) &
+    relHeight._Wrapped +~ (t+b) &
+    relPicture.mapped %~ translate l (-t)
 
 bordered
   :: Reflex t
   => Float -- ^ border thickness
-  -> Element t
-  -> Element t
+  -> RElement t
+  -> RElement t
 bordered thickness el =
   el &
-    elPosition.mapped._x -~ thickness &
-    elPosition.mapped._y -~ thickness &
-    elWidth._Wrapped +~ (2*thickness) &
-    elHeight._Wrapped +~ (2*thickness) &
-    elPicture .~
+    relWidth._Wrapped +~ (2*thickness) &
+    relHeight._Wrapped +~ (2*thickness) &
+    relPicture .~
       ((\pic ->
           translate thickness (-thickness) $
           pic <>
@@ -141,72 +166,60 @@ bordered thickness el =
                 , (n - thickness, n - h - thickness)
                 ])
             [0..thickness-1]) <$>
-      _elPicture el)
+      _relPicture el)
   where
-    w = unWidth $ _elWidth el
-    h = unHeight $ _elHeight el
-
-mouseInside
-  :: (MonadHold t m, MonadFix m, UIBuilder t m)
-  => Dynamic t (V3 Float)
-  -> Width Float
-  -> Height Float
-  -> m (Dynamic t Bool)
-mouseInside dPosition w h = do
-  events <- askInputs
-  Viewport{..} <- askViewport
-  let
-    eMove =
-      (\(x, y) -> (x + (unWidth _vpWidth/2), -y + (unHeight _vpHeight/2))) <$>
-      select events GE_Motion
-  holdUniqDyn =<<
-    holdDyn
-      False
-      ((\(V3 elx ely _) (cx, cy) ->
-        elx <= cx && cx < elx + unWidth w &&
-        ely <= cy && cy < ely + unHeight h) <$>
-      current dPosition <@>
-      eMove)
+    w = unWidth $ _relWidth el
+    h = unHeight $ _relHeight el
 
 clicked
   :: (MonadHold t m, MonadFix m, UIBuilder t m)
-  => Element t
-  -> m (Event t ())
+  => RElement t
+  -> m (Dynamic t (V3 Float) -> Width Float -> Height Float -> Event t ())
 clicked el = do
   events <- askInputs
   let
     eClick =
       select events $
       GE_Key (Just $ MouseButton LeftButton) (Just Down) Nothing
-  pure . void $ ffilter id (current (_elMouseInside el) <@ eClick)
+  pure $
+    \dPos w h ->
+      void $
+      ffilter
+        id
+        (current (_relMouseInside el) <*>
+         current dPos <*>
+         pure w <*>
+         pure h <@
+         eClick)
 
 mouseEntered
   :: (MonadHold t m, MonadFix m, UIBuilder t m)
-  => Element t
-  -> m (Event t ())
+  => RElement t
+  -> m (Dynamic t (V3 Float) -> Width Float -> Height Float -> Event t ())
 mouseEntered el = do
   let
-    dInElement = _elMouseInside el
+    dInElement = _relMouseInside el
     eEntered =
-      attachWithMaybe
-        (\x y -> if not x && y then Just () else Nothing)
-        (current dInElement)
-        (updated dInElement)
-  pure eEntered
+      (\fx fy p w h -> if not (fx p w h) && fy p w h then Just () else Nothing) <$>
+      current dInElement <@>
+      updated dInElement
+  pure $
+    \dPos w h ->
+      fmapMaybe id ((\a f -> f a w h) <$> current dPos <@> eEntered)
 
 mouseLeft
   :: (MonadHold t m, MonadFix m, UIBuilder t m)
-  => Element t
-  -> m (Event t ())
+  => RElement t
+  -> m (Dynamic t (V3 Float) -> Width Float -> Height Float -> Event t ())
 mouseLeft el = do
   let
-    dInElement = _elMouseInside el
+    dInElement = _relMouseInside el
     eLeft =
-      attachWithMaybe
-        (\x y -> if x && not y then Just () else Nothing)
-        (current dInElement)
-        (updated dInElement)
-  pure eLeft
+      (\fx fy p w h -> if fx p w h && not (fy p w h) then Just () else Nothing) <$>
+      current dInElement <@>
+      updated dInElement
+  pure $
+    \dPos w h -> fmapMaybe id ((\a f -> f a w h) <$> current dPos <@> eLeft)
 
 button
   :: (MonadHold t m, MonadFix m, UIBuilder t m)
@@ -214,24 +227,29 @@ button
   -> String
   -> m (Event t (), Element t)
 button dPosition msg = do
-  el <- bordered 2 . margin 5 5 5 5 <$> text dPosition msg
-  eEntered <- mouseEntered el
-  eLeft <- mouseLeft el
-  eClicked <- clicked el
+  rel <- bordered 2 . margin 5 5 5 5 <$> text msg
+  feEntered <- mouseEntered rel
+  feLeft <- mouseLeft rel
+  feClicked <- clicked rel
   let
-    w = unWidth $ _elWidth el
-    h = unHeight $ _elHeight el
-    dPictureUnhighlighed = _elPicture el
+    w = unWidth $ _relWidth rel
+    h = unHeight $ _relHeight rel
+    dPictureUnhighlighed = _relPicture rel
     dPictureHighlighed =
       (color
          (greyN 0.7)
-         (polygon [(0, 0), (w, 0), (w, -h), (0, -h)]) <>) <$> _elPicture el
+         (polygon [(0, 0), (w, 0), (w, -h), (0, -h)]) <>) <$> _relPicture rel
   dPicture <-
     join <$>
     holdDyn
       dPictureUnhighlighed
       (leftmost
-       [ dPictureHighlighed <$ eEntered
-       , dPictureUnhighlighed <$ eLeft
+       [ dPictureHighlighed <$
+         feEntered dPosition (_relWidth rel) (_relHeight rel)
+       , dPictureUnhighlighed <$
+         feLeft dPosition (_relWidth rel) (_relHeight rel)
        ])
-  pure (eClicked, el & elPicture .~ dPicture)
+  pure
+    ( feClicked dPosition (_relWidth rel) (_relHeight rel)
+    , toElement dPosition rel & elPicture .~ dPicture
+    )
