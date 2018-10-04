@@ -52,7 +52,8 @@ import qualified Map as Game
 data Assets
   = Assets
   { _assetsPlayerPicture :: Picture
-  , _assetsChaserPicture :: Picture
+  , _assetsChaserOpenPicture :: Picture
+  , _assetsChaserClosedPicture :: Picture
   , _assetsMapPicture :: Picture
   , _assetsBoxClosedPicture :: Picture
   , _assetsBoxOpenPicture :: Picture
@@ -121,7 +122,7 @@ play screenSize Assets{..} refresh input =
         mp
         gc
         controls
-        _assetsChaserPicture
+        (_assetsChaserOpenPicture, _assetsChaserClosedPicture)
         (Width 17)
         (Height 17)
         (V2 300 300)
@@ -171,9 +172,13 @@ main = do
     maybe (error "couldn't load dude") pure =<<
     loadJuicyPNG "assets/dude.png"
 
-  _assetsChaserPicture <-
-    maybe (error "couldn't load dude") pure =<<
+  _assetsChaserOpenPicture <-
+    maybe (error "couldn't load chaser") pure =<<
     loadJuicyPNG "assets/chaser.png"
+
+  _assetsChaserClosedPicture <-
+    maybe (error "couldn't load chaser_closed") pure =<<
+    loadJuicyPNG "assets/chaser_closed.png"
 
   _assetsMapPicture <-
     maybe (error "couldn't load map") pure =<<

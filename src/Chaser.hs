@@ -18,6 +18,7 @@ import Linear.Affine (Point(..), qdA, origin)
 import Linear.Metric (dot,normalize)
 import Linear.V2 (V2(..), _x, _y)
 
+import Animate (loopWithDelay)
 import Controls (Controls(..))
 import Dimensions (Width, Height, HasWidth(..), HasHeight(..))
 import Entity.Position (mkEntityPosition)
@@ -91,11 +92,14 @@ mkChaserRotation dChaserPos dTargetPos =
     angleBetween a b = acos ((a `dot` b) / (mag a * mag b))
 
 mkChaserPicture
-  :: Reflex t
-  => Picture
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (Picture, Picture)
   -> Dynamic t Float
-  -> Dynamic t Picture
-mkChaserPicture pic dAngle = rotate . fromRadians <$> dAngle <*> pure pic
+  -> Event t ()
+  -> m (Dynamic t Picture)
+mkChaserPicture (openPic, closedPic) dAngle eRefresh = do
+  dPic <- loopWithDelay 10 [openPic, closedPic] eRefresh
+  pure $ rotate . fromRadians <$> dAngle <*> dPic
   where
     fromRadians x = 180 * x / pi
 
@@ -107,7 +111,7 @@ mkChaser
   => Map
   -> GridConfig
   -> Controls t
-  -> Picture
+  -> (Picture, Picture)
   -> Width Float
   -> Height Float
   -> V2 Float
@@ -119,7 +123,8 @@ mkChaser mp gc controls pic _chaserWidth _chaserHeight pPos player = do
 
   let
     _chaserRotation = mkChaserRotation _chaserPosition (player^.position)
-    _chaserPicture = mkChaserPicture pic _chaserRotation
+  _chaserPicture <-
+    mkChaserPicture pic _chaserRotation (() <$ _eRefresh controls)
   rec
     _chaserCaughtPlayer <-
       fmap (() <$) . headE .

@@ -35,6 +35,7 @@ executable game
 
 library
   exposed-modules:       Unique
+                       , Animate
                        , Box
                        , Chaser
                        , Dimensions
