@@ -162,8 +162,7 @@ play screenSize Assets{..} refresh input =
     pure
       ( (dPicture, never)
       , caught input viewport _assetsFont controls <$
-        ePostBuild
-        -- _chaserCaughtPlayer chaser
+        _chaserCaughtPlayer chaser
       )
 
 main :: IO ()
